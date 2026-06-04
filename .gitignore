@@ -1,4 +1,6 @@
 node_modules/
 dist/
 .env.local
+.kite-session.json
 *.tsbuildinfo
+vite-dev*.log

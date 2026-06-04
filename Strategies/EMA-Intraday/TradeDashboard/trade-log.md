@@ -1,0 +1,1082 @@
+# Trade Log
+
+Append-only trade log for EMA Intraday saves.
+
+New entries are written by the local app server when a trade day is saved from the Trade Dashboard.
+
+
+
+### 2026-06-03T11:55:44.073Z - Saved Trade
+- Record ID: 5f423caa-f44b-4aad-a34a-df0a1514bc90
+- Trade Date: 2021-01-21
+- Expiry: 2021-01-21
+- Track Strike: 14700
+- Created At: 2026-06-03T11:55:44.057Z
+- Updated At: 2026-06-03T11:55:44.057Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 97b3d105-edf1-49bb-9cce-72fe85e4e800
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T11:56:01.472Z - Saved Trade
+- Record ID: 7fc3be41-5447-402b-a137-405209e7b4ae
+- Trade Date: 2021-01-13
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-03T11:56:01.467Z
+- Updated At: 2026-06-03T11:56:01.467Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 266a67fb-9141-4554-9387-5466664dc004
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T11:56:21.807Z - Saved Trade
+- Record ID: 91634f9e-371e-4dc9-8895-3c8678b3deb7
+- Trade Date: 2021-01-14
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-03T11:56:21.803Z
+- Updated At: 2026-06-03T11:56:21.803Z
+- Leg 1
+  - Trade 1
+    - Trade ID: eb07e7ab-81e3-4ec3-b6d1-945fc207e565
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T11:57:08.507Z - Saved Trade
+- Record ID: 728911e1-f641-4ec3-b983-48ad8f18a012
+- Trade Date: 2021-01-20
+- Expiry: 2021-01-21
+- Track Strike: 14600
+- Created At: 2026-06-03T11:57:08.503Z
+- Updated At: 2026-06-03T11:57:08.503Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 9579ba14-eff4-4865-9609-83f789fbd5a9
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T11:57:26.973Z - Updated Trade
+- Record ID: 728911e1-f641-4ec3-b983-48ad8f18a012
+- Trade Date: 2021-01-20
+- Expiry: 2021-01-21
+- Track Strike: 14600
+- Created At: 2026-06-03T11:57:08.503Z
+- Updated At: 2026-06-03T11:57:26.968Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 9579ba14-eff4-4865-9609-83f789fbd5a9
+    - Option: CE
+    - Trade Strike: 16000
+    - Quantity: 75
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: -
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+  - Trade 2
+    - Trade ID: 4974acdb-284c-4f54-8889-994c2ea807df
+    - Option: PE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:00:11.825Z - Saved Trade
+- Record ID: ac60d252-8dcb-4dc3-a23a-ea5e230dff8a
+- Trade Date: 2021-01-21
+- Expiry: 2021-01-21
+- Track Strike: 14700
+- Created At: 2026-06-03T12:00:11.819Z
+- Updated At: 2026-06-03T12:00:11.819Z
+- Leg 1
+  - Trade 1
+    - Trade ID: a0cc1f02-f90d-40e2-9ccf-c40542df1a70
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:01:34.959Z - Saved Trade
+- Record ID: d0dd7414-2947-4559-8c2f-0644bb681ec8
+- Trade Date: 2021-01-14
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-03T12:01:34.948Z
+- Updated At: 2026-06-03T12:01:34.948Z
+- Leg 1
+  - Trade 1
+    - Trade ID: b063db59-d788-4e7f-909b-3d21cdeddb8c
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:02:29.588Z - Updated Trade
+- Record ID: d0dd7414-2947-4559-8c2f-0644bb681ec8
+- Trade Date: 2021-01-14
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-03T12:01:34.948Z
+- Updated At: 2026-06-03T12:02:29.584Z
+- Leg 1
+  - Trade 1
+    - Trade ID: b063db59-d788-4e7f-909b-3d21cdeddb8c
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 75
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:42
+    - Entry Price: 25.00
+    - Exit Time: 10:03
+    - Exit Price: 50.00
+    - PL: -1875.00
+  - Trade 2
+    - Trade ID: 116810ad-eded-4ade-9aa2-fff806e1f0b1
+    - Option: PE
+    - Trade Strike: 24000
+    - Quantity: 75
+    - Entry Reason: Normal Entry
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:54
+    - Entry Price: 20.00
+    - Exit Time: 10:03
+    - Exit Price: 4.00
+    - PL: 1200.00
+
+### 2026-06-03T12:02:40.911Z - Updated Trade
+- Record ID: d0dd7414-2947-4559-8c2f-0644bb681ec8
+- Trade Date: 2021-01-14
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-03T12:01:34.948Z
+- Updated At: 2026-06-03T12:02:40.907Z
+- Leg 1
+  - Trade 1
+    - Trade ID: b063db59-d788-4e7f-909b-3d21cdeddb8c
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 75
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:42
+    - Entry Price: 25.00
+    - Exit Time: 10:03
+    - Exit Price: 50.00
+    - PL: -1875.00
+  - Trade 2
+    - Trade ID: 116810ad-eded-4ade-9aa2-fff806e1f0b1
+    - Option: PE
+    - Trade Strike: 24000
+    - Quantity: 75
+    - Entry Reason: Normal Entry
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:54
+    - Entry Price: 20.00
+    - Exit Time: 10:03
+    - Exit Price: 4.00
+    - PL: 1200.00
+- Leg 2
+  - Trade 1
+    - Trade ID: ffd99be5-0ac3-44a3-a3f4-20159e06ceba
+    - Option: PE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:04:24.592Z - Saved Trade
+- Record ID: 4e37a0fd-4cc1-4e19-82e3-6295ddb2f415
+- Trade Date: 2026-05-25
+- Expiry: 2026-05-26
+- Track Strike: 24000
+- Created At: 2026-06-03T12:04:24.588Z
+- Updated At: 2026-06-03T12:04:24.588Z
+- Leg 1
+  - Trade 1
+    - Trade ID: e6a168b3-c953-4e32-a265-1003c8e010d6
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:05:15.154Z - Updated Trade
+- Record ID: 4e37a0fd-4cc1-4e19-82e3-6295ddb2f415
+- Trade Date: 2026-05-25
+- Expiry: 2026-05-26
+- Track Strike: 24000
+- Created At: 2026-06-03T12:04:24.588Z
+- Updated At: 2026-06-03T12:05:14.840Z
+- Leg 1
+  - Trade 1
+    - Trade ID: e6a168b3-c953-4e32-a265-1003c8e010d6
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Sudden Spike
+    - Entry Time: 09:27
+    - Entry Price: 20.00
+    - Exit Time: 10:00
+    - Exit Price: 25.00
+    - PL: -650.00
+  - Trade 2
+    - Trade ID: c7827aa2-0890-4b05-a1f7-85aa4044b22a
+    - Option: PE
+    - Trade Strike: 25200
+    - Quantity: 130
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:30
+    - Entry Price: 23.00
+    - Exit Time: 10:00
+    - Exit Price: 5.00
+    - PL: 2340.00
+
+### 2026-06-03T12:05:18.361Z - Updated Trade
+- Record ID: 4e37a0fd-4cc1-4e19-82e3-6295ddb2f415
+- Trade Date: 2026-05-25
+- Expiry: 2026-05-26
+- Track Strike: 24000
+- Created At: 2026-06-03T12:04:24.588Z
+- Updated At: 2026-06-03T12:05:18.361Z
+- Leg 1
+  - Trade 1
+    - Trade ID: e6a168b3-c953-4e32-a265-1003c8e010d6
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Sudden Spike
+    - Entry Time: 09:27
+    - Entry Price: 20.00
+    - Exit Time: 10:00
+    - Exit Price: 25.00
+    - PL: -650.00
+  - Trade 2
+    - Trade ID: c7827aa2-0890-4b05-a1f7-85aa4044b22a
+    - Option: PE
+    - Trade Strike: 25200
+    - Quantity: 130
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:30
+    - Entry Price: 23.00
+    - Exit Time: 10:00
+    - Exit Price: 5.00
+    - PL: 2340.00
+
+### 2026-06-03T12:07:32.606Z - Updated Trade
+- Record ID: 4e37a0fd-4cc1-4e19-82e3-6295ddb2f415
+- Trade Date: 2026-05-25
+- Expiry: 2026-05-26
+- Track Strike: 24000
+- Created At: 2026-06-03T12:04:24.588Z
+- Updated At: 2026-06-03T12:07:32.602Z
+- Leg 1
+  - Trade 1
+    - Trade ID: e6a168b3-c953-4e32-a265-1003c8e010d6
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Sudden Spike
+    - Entry Time: 09:27
+    - Entry Price: 20.00
+    - Exit Time: 10:00
+    - Exit Price: 25.00
+    - PL: -650.00
+  - Trade 2
+    - Trade ID: c7827aa2-0890-4b05-a1f7-85aa4044b22a
+    - Option: PE
+    - Trade Strike: 25200
+    - Quantity: 130
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:30
+    - Entry Price: 23.00
+    - Exit Time: 10:00
+    - Exit Price: 5.00
+    - PL: 2340.00
+
+### 2026-06-03T12:07:55.750Z - Saved Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:07:55.747Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:08:41.027Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:08:40.706Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:08:51.030Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:08:51.030Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:08:52.560Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:08:52.560Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:09:03.675Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:09:03.366Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: -
+    - Entry Time: 10:06
+    - Entry Price: 20.00
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:09:17.099Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:09:17.098Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: EOD
+    - Entry Time: 10:06
+    - Entry Price: 20.00
+    - Exit Time: 15:30
+    - Exit Price: 0.05
+    - PL: 2593.50
+
+### 2026-06-03T12:09:19.172Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:09:19.172Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: EOD
+    - Entry Time: 10:06
+    - Entry Price: 20.00
+    - Exit Time: 15:30
+    - Exit Price: 0.05
+    - PL: 2593.50
+
+### 2026-06-03T12:09:20.908Z - Updated Trade
+- Record ID: 5d826da2-a575-495a-aac3-ed6ada3f53a7
+- Trade Date: 2026-02-23
+- Expiry: 2026-02-24
+- Track Strike: 25700
+- Created At: 2026-06-03T12:07:55.747Z
+- Updated At: 2026-06-03T12:09:20.908Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 0e1fe171-13c7-4372-8a8b-93f011fad6cd
+    - Option: CE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 09:39
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 33.00
+    - PL: -1690.00
+  - Trade 2
+    - Trade ID: c5c03024-e389-4715-9a9e-9af0954ad3e3
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: CE SL Trigger
+    - Entry Time: 09:51
+    - Entry Price: 20.00
+    - Exit Time: 09:45
+    - Exit Price: 13.95
+    - PL: 786.50
+- Leg 2
+  - Trade 1
+    - Trade ID: 9fef2a07-989e-4890-866a-86e46f843d5b
+    - Option: PE
+    - Trade Strike: 25000
+    - Quantity: 130
+    - Entry Reason: CE SL Trigger
+    - Exit Reason: EOD
+    - Entry Time: 10:06
+    - Entry Price: 20.00
+    - Exit Time: 15:30
+    - Exit Price: 0.05
+    - PL: 2593.50
+
+### 2026-06-03T12:11:53.848Z - Saved Trade
+- Record ID: bebaafbe-f5b3-4e07-9469-72edc720e0db
+- Trade Date: 2021-01-21
+- Expiry: 2021-01-21
+- Track Strike: 14700
+- Created At: 2026-06-03T12:11:53.845Z
+- Updated At: 2026-06-03T12:11:53.845Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 439d5d4b-2fc2-4b0d-bb21-f030c4acfa7b
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:12:14.483Z - Updated Trade
+- Record ID: bebaafbe-f5b3-4e07-9469-72edc720e0db
+- Trade Date: 2021-01-21
+- Expiry: 2021-01-21
+- Track Strike: 14700
+- Created At: 2026-06-03T12:11:53.845Z
+- Updated At: 2026-06-03T12:12:14.480Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 439d5d4b-2fc2-4b0d-bb21-f030c4acfa7b
+    - Option: CE
+    - Trade Strike: 16000
+    - Quantity: 130
+    - Entry Reason: 1000 EMA Trade
+    - Exit Reason: EOD
+    - Entry Time: 09:45
+    - Entry Price: 20.00
+    - Exit Time: 15:30
+    - Exit Price: 0.05
+    - PL: 2593.50
+
+### 2026-06-03T12:15:03.478Z - Saved Trade
+- Record ID: 56d39c57-8b3e-4e10-a57a-d7290148e8ce
+- Trade Date: 2021-01-27
+- Expiry: 2021-01-28
+- Track Strike: 14200
+- Created At: 2026-06-03T12:15:03.469Z
+- Updated At: 2026-06-03T12:15:03.469Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 859c4fef-3b9b-424d-a88d-3f11caab528d
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:15:22.573Z - Updated Trade
+- Record ID: 56d39c57-8b3e-4e10-a57a-d7290148e8ce
+- Trade Date: 2021-01-27
+- Expiry: 2021-01-28
+- Track Strike: 14200
+- Created At: 2026-06-03T12:15:03.469Z
+- Updated At: 2026-06-03T12:15:22.566Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 859c4fef-3b9b-424d-a88d-3f11caab528d
+    - Option: CE
+    - Trade Strike: 16
+    - Quantity: 130
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: EOD
+    - Entry Time: 09:42
+    - Entry Price: 20.00
+    - Exit Time: 15:30
+    - Exit Price: 0.05
+    - PL: 2593.50
+
+### 2026-06-03T12:18:41.749Z - Saved Trade
+- Record ID: c78f1b99-e694-4acd-8fa7-6eeb99414160
+- Trade Date: 2021-01-21
+- Expiry: 2021-01-21
+- Track Strike: 14700
+- Created At: 2026-06-03T12:18:41.743Z
+- Updated At: 2026-06-03T12:18:41.743Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 860f7256-3554-415f-8e8b-3184220ebe2f
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:18:47.987Z - Saved Trade
+- Record ID: af299256-6e10-4997-ae8c-dd4e4be3f875
+- Trade Date: 2021-01-06
+- Expiry: 2021-01-07
+- Track Strike: 14200
+- Created At: 2026-06-03T12:18:47.983Z
+- Updated At: 2026-06-03T12:18:47.983Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 4a8d9541-7204-4dfa-97e7-20a24b82573c
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:32:55.716Z - Saved Trade
+- Record ID: ec853c2d-3886-42f7-bd7a-51d53f4ce44c
+- Trade Date: 2021-01-28
+- Expiry: 2021-01-28
+- Track Strike: 13800
+- Created At: 2026-06-03T12:32:55.710Z
+- Updated At: 2026-06-03T12:32:55.710Z
+- Leg 1
+  - Trade 1
+    - Trade ID: eb17ec67-42e0-4e51-97f4-3c4d75a7d3aa
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:39:06.835Z - Saved Trade
+- Record ID: 06913c65-000d-4abe-9ec8-22f4e2a325af
+- Trade Date: 2021-01-14
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-03T12:39:06.816Z
+- Updated At: 2026-06-03T12:39:06.816Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 591e625f-dcf4-423e-afce-7b3432e0f30b
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:40:45.597Z - Saved Trade
+- Record ID: 3cc42c45-bb8e-447a-8798-99d12abf288f
+- Trade Date: 2021-01-27
+- Expiry: 2021-01-28
+- Track Strike: 14200
+- Created At: 2026-06-03T12:40:45.594Z
+- Updated At: 2026-06-03T12:40:45.594Z
+- Leg 1
+  - Trade 1
+    - Trade ID: f21dbf53-94a9-415e-9167-35ba6bf0445d
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:54:45.799Z - Saved Trade
+- Record ID: 98b1df19-0c47-4c75-8cb8-68e92d95815f
+- Trade Date: 2026-06-02
+- Expiry: 2026-06-02
+- Track Strike: 23300
+- Created At: 2026-06-03T12:54:45.487Z
+- Updated At: 2026-06-03T12:54:45.487Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 27cafba7-1550-4cfa-b03a-8d9a8660526f
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T12:57:36.186Z - Saved Trade
+- Record ID: a4bdc25f-2540-456a-902a-2babb6275098
+- Trade Date: 2026-06-01
+- Expiry: 2026-06-02
+- Track Strike: 23600
+- Created At: 2026-06-03T12:57:35.870Z
+- Updated At: 2026-06-03T12:57:35.870Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 059b8610-76af-4e1f-ac94-85e17c46133f
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T13:01:13.553Z - Saved Trade
+- Record ID: 5832c2d0-97c9-4551-9c31-b9371051fe6a
+- Trade Date: 2026-06-02
+- Expiry: 2026-06-02
+- Track Strike: 23300
+- Created At: 2026-06-03T13:01:13.241Z
+- Updated At: 2026-06-03T13:01:13.241Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 59419f74-c7ae-4162-ae3b-a198eeade6f4
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T13:04:17.837Z - Updated Trade
+- Record ID: 5832c2d0-97c9-4551-9c31-b9371051fe6a
+- Trade Date: 2026-06-02
+- Expiry: 2026-06-02
+- Track Strike: 23300
+- Created At: 2026-06-03T13:01:13.241Z
+- Updated At: 2026-06-03T13:04:17.516Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 59419f74-c7ae-4162-ae3b-a198eeade6f4
+    - Option: CE
+    - Trade Strike: 23500
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 14.24
+    - Entry Price: 23.30
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T13:06:05.495Z - Updated Trade
+- Record ID: 5832c2d0-97c9-4551-9c31-b9371051fe6a
+- Trade Date: 2026-06-02
+- Expiry: 2026-06-02
+- Track Strike: 23300
+- Created At: 2026-06-03T13:01:13.241Z
+- Updated At: 2026-06-03T13:06:05.181Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 59419f74-c7ae-4162-ae3b-a198eeade6f4
+    - Option: CE
+    - Trade Strike: 23500
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: -
+    - Entry Time: 09:21
+    - Entry Price: 23.30
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-03T13:10:35.777Z - Updated Trade
+- Record ID: 5832c2d0-97c9-4551-9c31-b9371051fe6a
+- Trade Date: 2026-06-02
+- Expiry: 2026-06-02
+- Track Strike: 23300
+- Created At: 2026-06-03T13:01:13.241Z
+- Updated At: 2026-06-03T13:10:35.447Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 59419f74-c7ae-4162-ae3b-a198eeade6f4
+    - Option: CE
+    - Trade Strike: 23500
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: PE SL Trigger
+    - Entry Time: 09:21
+    - Entry Price: 23.30
+    - Exit Time: 11.00
+    - Exit Price: 9.00
+    - PL: 1859.00
+  - Trade 2
+    - Trade ID: 0c0d12c2-ea7d-4705-bb74-b6dd235312ba
+    - Option: PE
+    - Trade Strike: 24000
+    - Quantity: 130
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 9.33
+    - Entry Price: 22.50
+    - Exit Time: 11.00
+    - Exit Price: 44.00
+    - PL: -2795.00
+
+### 2026-06-03T13:10:57.613Z - Updated Trade
+- Record ID: 5832c2d0-97c9-4551-9c31-b9371051fe6a
+- Trade Date: 2026-06-02
+- Expiry: 2026-06-02
+- Track Strike: 23300
+- Created At: 2026-06-03T13:01:13.241Z
+- Updated At: 2026-06-03T13:10:57.614Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 59419f74-c7ae-4162-ae3b-a198eeade6f4
+    - Option: CE
+    - Trade Strike: 23500
+    - Quantity: 130
+    - Entry Reason: Normal Entry
+    - Exit Reason: PE SL Trigger
+    - Entry Time: 09:21
+    - Entry Price: 23.30
+    - Exit Time: 11.00
+    - Exit Price: 9.00
+    - PL: 1859.00
+  - Trade 2
+    - Trade ID: 0c0d12c2-ea7d-4705-bb74-b6dd235312ba
+    - Option: PE
+    - Trade Strike: 24000
+    - Quantity: 130
+    - Entry Reason: EMA 9 Entry
+    - Exit Reason: Swing High Break
+    - Entry Time: 9.33
+    - Entry Price: 22.50
+    - Exit Time: 11.00
+    - Exit Price: 44.00
+    - PL: -2795.00
+- Leg 2
+  - Trade 1
+    - Trade ID: 15701fdb-1420-4e8a-a1c8-8dce624417da
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 130
+    - Entry Reason: PE SL Trigger
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
