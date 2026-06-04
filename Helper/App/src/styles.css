@@ -40,7 +40,7 @@ input {
 .app-shell {
   width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 32px 0;
+  padding: 12px 0 28px;
 }
 
 .master-shell {
@@ -56,7 +56,7 @@ input {
   display: grid;
   align-content: start;
   gap: 26px;
-  padding: 18px 12px;
+  padding: 12px 12px;
   color: #1b4b43;
   background:
     radial-gradient(circle at top, rgba(255, 255, 255, 0.98), transparent 26%),
@@ -72,7 +72,7 @@ input {
 .master-sidebar:hover,
 .master-shell--sidebar-expanded .master-sidebar {
   width: 284px;
-  padding: 18px 16px;
+  padding: 12px 16px;
 }
 
 .master-sidebar-top {
@@ -268,7 +268,7 @@ input {
   min-width: 0;
   display: grid;
   gap: 20px;
-  padding: 10px 32px 40px;
+  padding: 0 32px 32px;
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.96), transparent 28%),
     linear-gradient(180deg, #faf8f3 0%, #f3efe7 100%);
@@ -279,7 +279,7 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 2px 6px;
+  padding: 0 2px 4px;
 }
 
 .master-eyebrow {
@@ -3048,7 +3048,7 @@ tbody tr:hover {
   }
 
   .master-content {
-    padding: 18px;
+    padding: 12px 18px 18px;
   }
 
   .master-page-header {
@@ -3066,7 +3066,7 @@ tbody tr:hover {
 
   .app-shell {
     width: min(100% - 20px, 1180px);
-    padding: 18px 0;
+    padding: 10px 0 18px;
   }
 
   .page-header,

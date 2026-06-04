@@ -63,7 +63,7 @@ export function StrategyForm({ initialValues, isEditing, saving, onSubmit, onCan
         >
           <span className="master-dropdown-value">{selectedLabel}</span>
           <span className="master-dropdown-caret" aria-hidden="true">
-            ▾
+            v
           </span>
         </button>
         {activeDropdown === field ? (

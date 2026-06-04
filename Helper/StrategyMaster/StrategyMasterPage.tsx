@@ -43,7 +43,7 @@ function StrategySidebar({
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <span aria-hidden="true">{collapsed ? '›' : '‹'}</span>
+          <span aria-hidden="true">{collapsed ? '>' : '<'}</span>
         </button>
       </div>
 
