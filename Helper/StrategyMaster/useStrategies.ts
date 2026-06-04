@@ -51,8 +51,10 @@ export function useStrategies() {
         }
         setEditingStrategy(null);
         await loadStrategies();
+        return true;
       } catch (currentError) {
         setError(currentError instanceof Error ? currentError.message : 'Unable to save strategy.');
+        return false;
       } finally {
         setStatus('idle');
       }

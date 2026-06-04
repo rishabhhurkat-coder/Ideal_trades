@@ -5,7 +5,7 @@ type StrategyFormProps = {
   initialValues: StrategyFormValues;
   isEditing: boolean;
   saving: boolean;
-  onSubmit: (values: StrategyFormValues) => Promise<void>;
+  onSubmit: (values: StrategyFormValues) => Promise<boolean | void>;
   onCancel: () => void;
 };
 

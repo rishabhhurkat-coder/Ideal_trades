@@ -194,3 +194,15 @@ This repository is currently in a stable verification phase, so no architectural
 - Keep the historical-data SQLite read model unless a database migration is explicitly approved.
 - Add tighter schema-aware reporting for trade activity only if the business flow expands.
 - Preserve the current launcher and local dev server shape unless a release task asks for a packaging change.
+
+## UI Improvements
+
+Date: 2026-06-04
+
+Files Modified:
+
+- `Helper/StrategyMaster/StrategyMasterPage.tsx`
+- `Helper/StrategyMaster/StrategyTable.tsx`
+- `Helper/StrategyMaster/StrategyForm.tsx`
+- `Helper/StrategyMaster/useStrategies.ts`
+- `Helper/App/src/styles.css`

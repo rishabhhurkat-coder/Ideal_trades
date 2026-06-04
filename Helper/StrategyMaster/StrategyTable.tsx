@@ -61,7 +61,6 @@ export function StrategyTable({
       <table>
         <thead>
           <tr>
-            <th>ID</th>
             <th>Strategy Name</th>
             <th>Strategy Type</th>
             <th>Trade Style</th>
@@ -72,7 +71,7 @@ export function StrategyTable({
         <tbody>
           {strategies.length === 0 ? (
             <tr>
-              <td className="empty-cell" colSpan={6}>
+              <td className="empty-cell" colSpan={5}>
                 No strategies found.
               </td>
             </tr>
@@ -80,7 +79,6 @@ export function StrategyTable({
             strategies.map((strategy) => {
               return (
                 <tr key={strategy.id}>
-                  <td>{strategy.id}</td>
                   <td>
                     <button className="link-button" type="button" onClick={() => onOpenStrategy(strategy)} disabled={busy}>
                       {strategy.strategy_name}
