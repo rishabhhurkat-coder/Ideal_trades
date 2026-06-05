@@ -1732,14 +1732,27 @@ input {
 
 .trade-gap-field-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
 
+.trade-gap-status-display,
 .trade-gap-value {
   padding-right: 11px;
   text-align: center;
+}
+
+.trade-gap-status-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding-left: 11px;
+  padding-right: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trade-date-layout {

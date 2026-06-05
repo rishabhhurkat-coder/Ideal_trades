@@ -1392,22 +1392,17 @@ function TradeModal({
                   <label className="trade-setup-field">
                     <span>GAP Status</span>
                     <div className="trade-gap-field-row">
-                      <select
-                        className={`trade-theme-control trade-status-control${draft.gap_status ? ` status-${toStatusClass(draft.gap_status)}` : ''}`}
-                        value={draft.gap_status}
-                        onChange={(event) => onUpdateDraft((current) => ({ ...current, gap_status: event.target.value }))}
+                      <div
+                        className={`trade-theme-control trade-gap-status-display trade-status-control${selectedTradeDateOption?.gapStatus ? ` status-${toStatusClass(selectedTradeDateOption.gapStatus)}` : ''}`}
+                        aria-label="GAP status derived from the selected trade date"
                       >
-                        <option value="">Select gap status</option>
-                        {GAP_STATUS_OPTIONS.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                      <input
-                        className="trade-theme-control trade-gap-value"
-                        value={selectedTradeDateOption?.gapValue ?? ''}
-                        readOnly
-                        placeholder="GAP"
-                      />
+                        {selectedTradeDateOption?.gapStatus ?? ''}
+                      </div>
+                      {selectedTradeDateOption?.gapStatus && selectedTradeDateOption.gapStatus !== 'No Gap' ? (
+                        <div className="trade-theme-control trade-gap-value" aria-label="GAP value derived from the selected trade date">
+                          {selectedTradeDateOption.gapValue ?? ''}
+                        </div>
+                      ) : null}
                     </div>
                   </label>
                   <label className="trade-setup-field">
