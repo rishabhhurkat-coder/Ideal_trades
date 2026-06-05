@@ -526,42 +526,42 @@ function CloseIcon() {
   );
 }
 
-type ExpiryCalendarDay = {
+type TradeDateCalendarDay = {
   dateKey: string;
   dayLabel: string;
   inMonth: boolean;
-  isExpiry: boolean;
+  isEligible: boolean;
+  option: TradeCalendarDateOption | null;
 };
 
-type ExpiryCalendarMonth = {
+type TradeDateCalendarMonth = {
   monthKey: string;
   label: string;
-  days: ExpiryCalendarDay[];
+  days: TradeDateCalendarDay[];
 };
 
-const CALENDAR_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CALENDAR_WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-function buildExpiryCalendar(expiryOptions: TradeCalendarExpiryOption[]) {
-  const expiryMap = new Map(
-    expiryOptions
+function buildTradeDateCalendar(tradeDates: TradeCalendarDateOption[]) {
+  const dateMap = new Map(
+    tradeDates
       .map((option) => {
-        const parsed = parseCalendarDate(option.expiry);
+        const parsed = parseCalendarDate(option.date);
         return parsed ? [toCalendarDateKey(parsed), option] : null;
       })
-      .filter((entry): entry is [string, TradeCalendarExpiryOption] => entry !== null),
+      .filter((entry): entry is [string, TradeCalendarDateOption] => entry !== null),
   );
 
-  const parsedExpiries = expiryOptions
-    .map((option) => parseCalendarDate(option.expiry))
+  const parsedDates = tradeDates
+    .map((option) => parseCalendarDate(option.date))
     .filter((date): date is Date => date !== null)
-    .sort((a, b) => a.getTime() - b.getTime());
+    .sort((left, right) => left.getTime() - right.getTime());
 
-  if (parsedExpiries.length === 0) return [];
+  if (parsedDates.length === 0) return [];
 
-  const firstMonth = getMonthStart(parsedExpiries[0]);
-  const lastMonth = getMonthStart(parsedExpiries[parsedExpiries.length - 1]);
-  const months: ExpiryCalendarMonth[] = [];
+  const firstMonth = getMonthStart(parsedDates[0]);
+  const lastMonth = getMonthStart(parsedDates[parsedDates.length - 1]);
+  const months: TradeDateCalendarMonth[] = [];
 
   for (
     let cursor = new Date(firstMonth);
@@ -571,15 +571,18 @@ function buildExpiryCalendar(expiryOptions: TradeCalendarExpiryOption[]) {
     const monthStart = getMonthStart(cursor);
     const startOffset = (monthStart.getDay() + 6) % 7;
     const calendarStart = addCalendarDays(monthStart, -startOffset);
+
     const days = Array.from({ length: 42 }, (_, index) => {
       const current = addCalendarDays(calendarStart, index);
       const dateKey = toCalendarDateKey(current);
-      const expiry = expiryMap.get(dateKey) ?? null;
+      const option = dateMap.get(dateKey) ?? null;
+
       return {
         dateKey,
         dayLabel: formatCalendarDay(current),
         inMonth: current.getMonth() === cursor.getMonth(),
-        isExpiry: expiry !== null,
+        isEligible: option !== null,
+        option,
       };
     });
 
@@ -591,13 +594,6 @@ function buildExpiryCalendar(expiryOptions: TradeCalendarExpiryOption[]) {
   }
 
   return months;
-}
-
-function findExpiryMonthIndexByYearMonth(months: ExpiryCalendarMonth[], year: number, monthIndex: number) {
-  return months.findIndex((month) => {
-    const parsed = new Date(`${month.monthKey}-01T00:00:00`);
-    return parsed.getFullYear() === year && parsed.getMonth() === monthIndex;
-  });
 }
 
 function formatDteLabel(dte: number) {
@@ -614,10 +610,6 @@ function formatEffDteValue(effDte: number | null) {
 
 function formatTradeCalendarOption(option: TradeCalendarDateOption) {
   return `${formatExpiryDisplay(option.date)} • Exp ${formatExpiryDisplay(option.expiryDate)} • DTE ${option.dte} • Eff ${option.effDte}`;
-}
-
-function formatExpiryCalendarOption(option: TradeCalendarExpiryOption) {
-  return `${formatExpiryDisplay(option.expiry)} • ${option.eligibleDates} dates`;
 }
 
 function findMatchingTransitionRule(trade: TradeEntryDraft, rules: TradeTransitionRule[]) {
@@ -1052,12 +1044,8 @@ function TradeModal({
   onOpenSettings: () => void;
 }) {
   const [activeLegIndex, setActiveLegIndex] = useState(0);
-  const [expiryPickerOpen, setExpiryPickerOpen] = useState(false);
-  const [expiryMonthMenuOpen, setExpiryMonthMenuOpen] = useState(false);
-  const [visibleExpiryMonthIndex, setVisibleExpiryMonthIndex] = useState(0);
-  const [expirySelectedYear, setExpirySelectedYear] = useState('');
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const expiryCalendarMonths = useMemo(() => buildExpiryCalendar(expiryOptions), [expiryOptions]);
+  const tradeCalendarMonths = useMemo(() => buildTradeDateCalendar(tradeDates), [tradeDates]);
+  const [visibleTradeMonthIndex, setVisibleTradeMonthIndex] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -1076,43 +1064,23 @@ function TradeModal({
   useEffect(() => {
     if (!open) {
       setActiveLegIndex(0);
-      setExpiryPickerOpen(false);
-      setExpiryMonthMenuOpen(false);
-      setDatePickerOpen(false);
+      setVisibleTradeMonthIndex(0);
     }
   }, [open]);
 
   useEffect(() => {
-    if (!draft.trade_date) return;
-    setExpiryPickerOpen(false);
-    setExpiryMonthMenuOpen(false);
-    setDatePickerOpen(false);
-  }, [draft.trade_date]);
-
-  useEffect(() => {
-    if (expiryCalendarMonths.length === 0) {
-      setVisibleExpiryMonthIndex(0);
-      setExpirySelectedYear('');
+    if (!open) return;
+    if (tradeCalendarMonths.length === 0) {
+      setVisibleTradeMonthIndex(0);
       return;
     }
 
-    const selectedExpiryDate = draft.expiry ? parseCalendarDate(draft.expiry) : null;
-    const latestMonthIndex = Math.max(expiryCalendarMonths.length - 1, 0);
-    const selectedMonthIndex = selectedExpiryDate
-      ? findExpiryMonthIndexByYearMonth(expiryCalendarMonths, selectedExpiryDate.getFullYear(), selectedExpiryDate.getMonth())
-      : latestMonthIndex;
+    const selectedTradeDate = draft.trade_date ? parseCalendarDate(draft.trade_date) : null;
+    const selectedMonthKey = selectedTradeDate ? toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7) : tradeCalendarMonths[0]?.monthKey ?? '';
+    const selectedMonthIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === selectedMonthKey);
 
-    setVisibleExpiryMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : latestMonthIndex);
-    const latestMonthParts = expiryCalendarMonths[latestMonthIndex]?.label.split(' ') ?? [];
-    const latestYear = latestMonthParts.length > 0 ? latestMonthParts[latestMonthParts.length - 1] : '';
-    setExpirySelectedYear((selectedExpiryDate ? String(selectedExpiryDate.getFullYear()) : '') || latestYear);
-  }, [draft.expiry, expiryCalendarMonths]);
-
-  useEffect(() => {
-    if (!draft.trade_date) {
-      setDatePickerOpen(false);
-    }
-  }, [draft.trade_date]);
+    setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
+  }, [draft.trade_date, open, tradeCalendarMonths]);
 
   if (!open) return null;
 
@@ -1124,15 +1092,9 @@ function TradeModal({
   const isSetupReady = Boolean(draft.expiry && draft.trade_date && draft.track_strike.trim());
   const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
   const selectedTradeDateExpiry = selectedTradeDateOption?.expiryDate || draft.expiry || '';
-  const visibleExpiryMonth = expiryCalendarMonths[visibleExpiryMonthIndex] ?? expiryCalendarMonths[0] ?? null;
-  const expiryYears = Array.from(
-    new Set(
-      expiryCalendarMonths.map((month) => {
-        const parts = month.label.split(' ');
-        return parts.length > 0 ? parts[parts.length - 1] : '';
-      }),
-    ),
-  ).filter(Boolean);
+  const visibleTradeMonth = tradeCalendarMonths[visibleTradeMonthIndex] ?? tradeCalendarMonths[0] ?? null;
+  const canGoToPreviousTradeMonth = visibleTradeMonthIndex > 0;
+  const canGoToNextTradeMonth = visibleTradeMonthIndex < tradeCalendarMonths.length - 1;
 
   function updateTradeWithOptionalRule(
     legIndex: number,
@@ -1176,311 +1138,212 @@ function TradeModal({
 
               <div className="trade-setup-divider" />
 
-              <div className="trade-setup-inline">
-                <label className="trade-setup-field">
-                  <span>Expiry</span>
-                  <div className="trade-date-picker">
-                    <button
-                      className="trade-theme-control trade-date-trigger"
-                      type="button"
-                      disabled
-                      onClick={() => setExpiryPickerOpen((current) => !current)}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)',
+                  gap: '18px',
+                  alignItems: 'start',
+                }}
+              >
+                <section
+                  style={{
+                    display: 'grid',
+                    gap: '12px',
+                    minWidth: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'grid', gap: '4px' }}>
+                      <strong style={{ color: '#0d4d47', fontSize: '18px', lineHeight: 1.1 }}>
+                        {visibleTradeMonth?.label ?? 'Trade Date Calendar'}
+                      </strong>
+                      <span style={{ color: '#5f6d69', fontSize: '12px' }}>
+                        Select an eligible trade date. Disabled days are unavailable.
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={() => setVisibleTradeMonthIndex((current) => Math.max(current - 1, 0))}
+                        disabled={!canGoToPreviousTradeMonth}
+                        aria-label="Previous month"
+                      >
+                        Prev
+                      </button>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={() => setVisibleTradeMonthIndex((current) => Math.min(current + 1, Math.max(tradeCalendarMonths.length - 1, 0)))}
+                        disabled={!canGoToNextTradeMonth}
+                        aria-label="Next month"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'grid',
+                      gap: '10px',
+                      border: '1px solid #dfe7e1',
+                      borderRadius: '18px',
+                      padding: '14px',
+                      background: 'linear-gradient(180deg, #ffffff 0%, #fbf8f2 100%)',
+                      boxShadow: '0 10px 24px rgba(19, 55, 52, 0.06)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                        gap: '6px',
+                      }}
                     >
-                      <span>{selectedTradeDateExpiry ? formatExpiryDisplay(selectedTradeDateExpiry) : 'Derived expiry'}</span>
-                      <span className="trade-date-trigger-caret">▼</span>
-                    </button>
-                    {expiryPickerOpen ? (
-                      <div className="trade-date-popover">
-                        <div className="trade-date-menu trade-expiry-menu">
-                          <div className="trade-date-menu-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                      {CALENDAR_WEEKDAY_NAMES.map((weekday) => (
+                        <div
+                          key={weekday}
+                          style={{
+                            textAlign: 'center',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            letterSpacing: '0.06em',
+                            textTransform: 'uppercase',
+                            color: 'rgba(15, 93, 82, 0.58)',
+                          }}
+                        >
+                          {weekday}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                        gap: '6px',
+                      }}
+                    >
+                      {visibleTradeMonth ? (
+                        visibleTradeMonth.days.map((day) => {
+                          const isSelected = draft.trade_date === day.dateKey;
+                          const canSelect = day.inMonth && day.isEligible && !loadingCalendar && !isExitStage;
+                          return (
                             <button
-                              className="trade-expiry-month-toggle"
+                              key={day.dateKey}
                               type="button"
-                              onClick={() => setExpiryMonthMenuOpen((current) => !current)}
-                              disabled={expiryCalendarMonths.length === 0}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '0.45rem',
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#ffffff',
-                                fontWeight: 800,
-                                cursor: expiryCalendarMonths.length > 0 ? 'pointer' : 'not-allowed',
-                                padding: 0,
+                              disabled={!canSelect}
+                              title={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
+                              aria-label={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
+                              aria-pressed={isSelected}
+                              onClick={() => {
+                                if (!day.option || !canSelect) return;
+                                onUpdateDraft((current) => ({
+                                  ...current,
+                                  trade_date: day.option?.date ?? '',
+                                  expiry: day.option?.expiryDate ?? '',
+                                  track_strike: '',
+                                }));
                               }}
-                            >
-                              <span>{visibleExpiryMonth?.label ?? 'Select month'}</span>
-                              <span style={{ fontSize: '0.8rem' }}>▼</span>
-                            </button>
-                            <span style={{ fontSize: '0.72rem', opacity: 0.9 }}>Expiry Calendar</span>
-                          </div>
-                          {expiryMonthMenuOpen ? (
-                            <div
-                              className="trade-expiry-month-menu"
                               style={{
                                 display: 'grid',
-                                gridTemplateColumns: '0.9fr 1.6fr',
-                                gap: '0.6rem',
-                                padding: '0.6rem',
-                                borderBottom: '1px solid rgba(255, 255, 255, 0.14)',
-                                background: 'rgba(255, 255, 255, 0.12)',
+                                placeItems: 'center',
+                                minHeight: '48px',
+                                borderRadius: '12px',
+                                border: isSelected ? '1px solid #0c5f53' : '1px solid rgba(12, 94, 83, 0.14)',
+                                background: isSelected
+                                  ? 'rgba(12, 94, 83, 0.14)'
+                                  : day.inMonth
+                                    ? day.isEligible
+                                      ? 'rgba(12, 94, 83, 0.05)'
+                                      : 'rgba(237, 232, 221, 0.42)'
+                                    : 'rgba(237, 232, 221, 0.25)',
+                                color: day.inMonth ? '#102f2b' : 'rgba(16, 47, 43, 0.34)',
+                                fontWeight: 800,
+                                cursor: canSelect ? 'pointer' : 'not-allowed',
+                                opacity: day.inMonth ? 1 : 0.45,
+                                boxShadow: isSelected ? '0 0 0 2px rgba(12, 94, 83, 0.08)' : 'none',
                               }}
                             >
-                              <div style={{ display: 'grid', gap: '0.3rem', alignContent: 'start' }}>
-                                {expiryYears.map((year) => (
-                                  <button
-                                    key={year}
-                                    type="button"
-                                    className="trade-expiry-month-year-option"
-                                    style={{
-                                      border: 'none',
-                                      background: expirySelectedYear === year ? 'rgba(15, 93, 82, 0.92)' : 'rgba(255, 255, 255, 0.92)',
-                                      color: expirySelectedYear === year ? '#ffffff' : '#0f5d52',
-                                      borderRadius: '10px',
-                                      padding: '0.55rem 0.7rem',
-                                      fontWeight: 800,
-                                      textAlign: 'left',
-                                      cursor: 'pointer',
-                                    }}
-                                  onClick={() => {
-                                      setExpirySelectedYear(year);
-                                      const index = expiryCalendarMonths.findIndex((month) => month.label.endsWith(year));
-                                      if (index >= 0) setVisibleExpiryMonthIndex(index);
-                                    }}
-                                  >
-                                    {year}
-                                  </button>
-                                ))}
-                              </div>
-                              <div
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                                  gap: '0.3rem',
-                                  alignContent: 'start',
-                                }}
-                              >
-                                {CALENDAR_MONTH_NAMES.map((monthName) => {
-                                  const matchingMonth = expiryCalendarMonths.find(
-                                    (month) => month.label.startsWith(monthName) && month.label.endsWith(expirySelectedYear),
-                                  );
-                                  const isActive = visibleExpiryMonth?.label.startsWith(monthName) && visibleExpiryMonth?.label.endsWith(expirySelectedYear);
-                                  return (
-                                    <button
-                                      key={monthName}
-                                      type="button"
-                                      className="trade-expiry-month-year-option"
-                                      style={{
-                                        border: 'none',
-                                        background: isActive ? 'rgba(15, 93, 82, 0.92)' : 'rgba(255, 255, 255, 0.92)',
-                                        color: isActive ? '#ffffff' : matchingMonth ? '#0f5d52' : 'rgba(15, 93, 82, 0.25)',
-                                        borderRadius: '10px',
-                                        padding: '0.5rem 0.35rem',
-                                        fontWeight: 800,
-                                        cursor: matchingMonth ? 'pointer' : 'not-allowed',
-                                      }}
-                                      disabled={!matchingMonth}
-                                      onClick={() => {
-                                        if (!matchingMonth) return;
-                                        const index = expiryCalendarMonths.findIndex((month) => month.monthKey === matchingMonth.monthKey);
-                                        if (index >= 0) setVisibleExpiryMonthIndex(index);
-                                        setExpiryMonthMenuOpen(false);
-                                      }}
-                                    >
-                                      {monthName}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ) : null}
-                          <div
-                            className="trade-expiry-calendar"
-                            style={{
-                              display: 'grid',
-                              gap: '0.45rem',
-                              maxHeight: 'min(34vh, 280px)',
-                              overflowY: 'auto',
-                              paddingRight: '0.25rem',
-                            }}
-                          >
-                            {visibleExpiryMonth ? (
-                              <section
-                                className="trade-expiry-month"
-                                style={{
-                                  border: '1px solid rgba(12, 94, 83, 0.12)',
-                                  borderRadius: '16px',
-                                  background: 'rgba(255, 255, 255, 0.72)',
-                                  padding: '0.4rem',
-                                }}
-                              >
-                                <div
-                                  className="trade-expiry-month-label"
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    marginBottom: '0.3rem',
-                                    fontSize: '0.8rem',
-                                    fontWeight: 700,
-                                    color: '#0f5d52',
-                                  }}
-                                >
-                                  <span>{visibleExpiryMonth.label}</span>
-                                  <span style={{ fontSize: '0.68rem', opacity: 0.7 }}>Expiry dates</span>
-                                </div>
-                                <div
-                                  className="trade-expiry-grid"
-                                  style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                                    gap: '0.2rem',
-                                  }}
-                                >
-                                  {CALENDAR_WEEKDAY_NAMES.map((weekday) => (
-                                    <div
-                                      key={weekday}
-                                      style={{
-                                        textAlign: 'center',
-                                        fontSize: '0.6rem',
-                                        fontWeight: 700,
-                                        letterSpacing: '0.06em',
-                                        textTransform: 'uppercase',
-                                        color: 'rgba(15, 93, 82, 0.56)',
-                                      }}
-                                    >
-                                      {weekday}
-                                    </div>
-                                  ))}
-                                  {visibleExpiryMonth.days.map((day) => {
-                                    const expiry = day.isExpiry ? expiryOptions.find((option) => option.expiry === day.dateKey) ?? null : null;
-                                    return (
-                                      <button
-                                        key={day.dateKey}
-                                        className={`trade-expiry-day${day.inMonth ? '' : ' muted'}${day.isExpiry ? ' expiry' : ''}${draft.expiry === day.dateKey ? ' active' : ''}`}
-                                        type="button"
-                                        disabled={!day.isExpiry}
-                                        title={expiry ? formatExpiryCalendarOption(expiry) : day.dateKey}
-                                        onClick={() => {
-                                          if (!day.isExpiry) return;
-                                          onUpdateDraft((current) => ({
-                                            ...current,
-                                            expiry: day.dateKey,
-                                            trade_date: '',
-                                            track_strike: '',
-                                          }));
-                                          setExpiryPickerOpen(false);
-                                          setExpiryMonthMenuOpen(false);
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          flexDirection: 'column',
-                                          alignItems: 'center',
-                                          justifyContent: 'center',
-                                          minHeight: '1.95rem',
-                                          borderRadius: '10px',
-                                          border: '1px solid rgba(12, 94, 83, 0.12)',
-                                          background: day.isExpiry
-                                            ? draft.expiry === day.dateKey
-                                              ? 'rgba(12, 94, 83, 0.16)'
-                                              : 'rgba(12, 94, 83, 0.06)'
-                                            : 'rgba(243, 240, 229, 0.35)',
-                                          color: day.inMonth ? '#0d312c' : 'rgba(13, 49, 44, 0.35)',
-                                          fontWeight: 700,
-                                          cursor: day.isExpiry ? 'pointer' : 'not-allowed',
-                                          padding: '0.12rem 0.1rem',
-                                          opacity: day.isExpiry ? 1 : 0.1,
-                                        }}
-                                      >
-                                        <span className="trade-expiry-day-number">{day.dayLabel}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </section>
-                            ) : (
-                              <div className="trade-expiry-empty">No expiry dates available</div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </label>
-                <label className="trade-setup-field trade-setup-field--date">
-                  <span>Trade Date</span>
-                  <div className="trade-date-picker">
-                    <button
-                      className="trade-theme-control trade-date-trigger"
-                      type="button"
-                      disabled={isExitStage || loadingCalendar}
-                      onClick={() => setDatePickerOpen((current) => !current)}
-                    >
-                      <span>{selectedTradeDateOption ? formatExpiryDisplay(selectedTradeDateOption.date) : 'Select trade date'}</span>
-                      <span className="trade-date-trigger-caret">▼</span>
-                    </button>
-                    {datePickerOpen ? (
-                      <div className="trade-date-popover">
-                        <div className="trade-date-menu">
-                          <div className="trade-date-menu-header">Trade Date Calendar</div>
-                          <div className="trade-date-menu-list">
-                            <button
-                              className={`trade-date-menu-item${!draft.trade_date ? ' active' : ''}`}
-                              type="button"
-                              onClick={() => {
-                                onUpdateDraft((current) => ({ ...current, trade_date: '', expiry: '', track_strike: '' }));
-                                setDatePickerOpen(false);
-                              }}
-                            >
-                              <span>Select trade date</span>
-                              <span>-</span>
+                              <span style={{ fontSize: '13px', lineHeight: 1 }}>{day.dayLabel}</span>
                             </button>
-                            {tradeDates.map((option) => (
-                              <button
-                                key={option.date}
-                                className={`trade-date-menu-item${draft.trade_date === option.date ? ' active' : ''}`}
-                                type="button"
-                                onClick={() => {
-                                  onUpdateDraft((current) => ({
-                                    ...current,
-                                    trade_date: option.date,
-                                    expiry: option.expiryDate,
-                                    track_strike: '',
-                                  }));
-                                  setDatePickerOpen(false);
-                                }}
-                              >
-                                <span>{formatExpiryDisplay(option.date)}</span>
-                                <span>{`${formatDteLabel(option.dte)} / Eff ${option.effDte}`}</span>
-                              </button>
-                            ))}
-                          </div>
+                          );
+                        })
+                      ) : (
+                        <div
+                          style={{
+                            gridColumn: '1 / -1',
+                            padding: '18px',
+                            borderRadius: '12px',
+                            border: '1px dashed rgba(12, 94, 83, 0.18)',
+                            color: '#5f6d69',
+                            textAlign: 'center',
+                            background: 'rgba(255, 255, 255, 0.7)',
+                          }}
+                        >
+                          {loadingCalendar ? 'Loading trade dates...' : 'No trade dates available'}
                         </div>
-                      </div>
-                    ) : null}
+                      )}
+                    </div>
                   </div>
-                </label>
-                <label className="trade-setup-field">
-                  <span>DTE</span>
-                  <input className="trade-theme-control" value={formatDteValue(selectedTradeDateOption?.dte ?? null)} readOnly placeholder="Enter DTE" />
-                </label>
-                <label className="trade-setup-field">
-                  <span>Eff DTE</span>
-                  <input className="trade-theme-control" value={formatEffDteValue(selectedTradeDateOption?.effDte ?? null)} readOnly placeholder="Derived from trade date" />
-                </label>
-                <label className="trade-setup-field">
-                  <span>Strike</span>
-                  <input
-                    className="trade-theme-control"
-                    type="number"
-                    step="0.05"
-                    placeholder="Enter strike"
-                    value={draft.track_strike}
-                    disabled={isExitStage || !draft.trade_date}
-                    onChange={(event) => onUpdateDraft((current) => ({ ...current, track_strike: event.target.value }))}
-                  />
-                </label>
+                </section>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: '12px',
+                    alignContent: 'start',
+                    minWidth: 0,
+                  }}
+                >
+                  <label className="trade-setup-field">
+                    <span>Expiry</span>
+                    <input
+                      className="trade-theme-control"
+                      value={selectedTradeDateExpiry ? formatExpiryDisplay(selectedTradeDateExpiry) : 'Derived from trade date'}
+                      readOnly
+                    />
+                  </label>
+                  <label className="trade-setup-field">
+                    <span>DTE</span>
+                    <input
+                      className="trade-theme-control"
+                      value={formatDteValue(selectedTradeDateOption?.dte ?? null)}
+                      readOnly
+                      placeholder="Derived from trade date"
+                    />
+                  </label>
+                  <label className="trade-setup-field">
+                    <span>Eff DTE</span>
+                    <input
+                      className="trade-theme-control"
+                      value={formatEffDteValue(selectedTradeDateOption?.effDte ?? null)}
+                      readOnly
+                      placeholder="Derived from trade date"
+                    />
+                  </label>
+                  <label className="trade-setup-field">
+                    <span>Strike</span>
+                    <input
+                      className="trade-theme-control"
+                      type="number"
+                      step="0.05"
+                      placeholder="Enter strike"
+                      value={draft.track_strike}
+                      disabled={isExitStage || !draft.trade_date}
+                      onChange={(event) => onUpdateDraft((current) => ({ ...current, track_strike: event.target.value }))}
+                    />
+                  </label>
+                </div>
               </div>
             </section>
           ) : null}
