@@ -1341,12 +1341,11 @@ function TradeModal({
                                   aria-label={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
                                   aria-pressed={isSelected}
                                   onClick={() => {
-                                    if (!day.option || !canSelect) return;
+                                    const option = day.option;
+                                    if (!option || !canSelect) return;
                                     onUpdateDraft((current) => ({
                                       ...current,
-                                      trade_date: day.option?.date ?? '',
-                                      expiry: day.option?.expiryDate ?? '',
-                                      track_strike: '',
+                                      trade_date: option.date,
                                     }));
                                   }}
                                 >
