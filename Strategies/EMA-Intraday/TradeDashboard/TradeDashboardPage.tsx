@@ -1407,16 +1407,12 @@ function TradeModal({
                   </label>
                   <label className="trade-setup-field">
                     <span>EMA Status</span>
-                    <select
-                      className={`trade-theme-control trade-status-control${draft.ema_status ? ` status-${toStatusClass(draft.ema_status)}` : ''}`}
-                      value={draft.ema_status}
-                      onChange={(event) => onUpdateDraft((current) => ({ ...current, ema_status: event.target.value }))}
+                    <div
+                      className={`trade-theme-control trade-status-control${selectedTradeDateOption?.emaStatus ? ` status-${toStatusClass(selectedTradeDateOption.emaStatus)}` : ''}`}
+                      aria-label="EMA status derived from the selected trade date"
                     >
-                      <option value="">Select EMA status</option>
-                      {EMA_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
+                      {selectedTradeDateOption?.emaStatus ?? ''}
+                    </div>
                   </label>
                 </div>
               </div>
