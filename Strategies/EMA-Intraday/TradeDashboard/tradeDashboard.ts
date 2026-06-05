@@ -76,6 +76,8 @@ export type TradeRecord = {
   trade_date: string;
   track_strike: number | null;
   expiry: string | null;
+  gap_status: string;
+  ema_status: string;
   legs: TradeLegRecord[];
   created_at: string;
   updated_at: string;
@@ -85,13 +87,14 @@ export type TradeRecordDraft = {
   trade_date: string;
   track_strike: string;
   expiry: string;
+  gap_status: string;
+  ema_status: string;
   legs: TradeLegDraft[];
 };
 
-const STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
-const QUANTITY_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-quantity';
 const DEFAULT_TRADE_QUANTITY = '75';
 const EOD_EXIT_TIME = '15:30';
+const TRADE_DASHBOARD_ENDPOINT = '/api/ema-intraday/trade-dashboard';
 
 function nowIso() {
   return new Date().toISOString();
@@ -107,19 +110,11 @@ function isValidQuantity(value: string) {
 }
 
 export function getRememberedTradeQuantity() {
-  if (typeof window === 'undefined') return DEFAULT_TRADE_QUANTITY;
-
-  const stored = window.localStorage.getItem(QUANTITY_STORAGE_KEY)?.trim() ?? '';
-  return isValidQuantity(stored) ? stored : DEFAULT_TRADE_QUANTITY;
+  return DEFAULT_TRADE_QUANTITY;
 }
 
 export function rememberTradeQuantity(quantity: string) {
-  if (typeof window === 'undefined') return;
-
-  const trimmed = quantity.trim();
-  if (!isValidQuantity(trimmed)) return;
-
-  window.localStorage.setItem(QUANTITY_STORAGE_KEY, trimmed);
+  void quantity;
 }
 
 function emptyTradeEntryDraft(option: TradeOption = 'CE'): TradeEntryDraft {
@@ -322,6 +317,8 @@ function normalizeLegacyRecord(item: any): TradeRecord | null {
         ? item.atm_strike
         : null,
     expiry: typeof item.expiry === 'string' && item.expiry ? item.expiry : null,
+    gap_status: typeof item.gap_status === 'string' ? item.gap_status : '',
+    ema_status: typeof item.ema_status === 'string' ? item.ema_status : '',
     legs,
     created_at: typeof item.created_at === 'string' ? item.created_at : nowIso(),
     updated_at: typeof item.updated_at === 'string' ? item.updated_at : nowIso(),
@@ -333,6 +330,8 @@ export function emptyTradeDraft(): TradeRecordDraft {
     trade_date: '',
     track_strike: '',
     expiry: '',
+    gap_status: '',
+    ema_status: '',
     legs: [emptyTradeLegDraft(1)],
   };
 }
@@ -345,19 +344,38 @@ export function emptyTradeLeg(legNo: number) {
   return emptyTradeLegDraft(legNo);
 }
 
-export function loadTradeRecords(): TradeRecord[] {
-  if (typeof window === 'undefined') return [];
+type TradeDashboardApiResponse =
+  | {
+      status: 'success';
+      records?: TradeRecord[];
+      record?: TradeRecord;
+      message?: string;
+    }
+  | {
+      status: 'error';
+      message?: string;
+    };
+type TradeDashboardSuccessResponse = Extract<TradeDashboardApiResponse, { status: 'success' }>;
 
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (!stored) return [];
+async function readTradeDashboardResponse(response: Response): Promise<TradeDashboardSuccessResponse> {
+  const result = (await response.json()) as TradeDashboardApiResponse;
 
-  try {
-    const parsed = JSON.parse(stored) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeLegacyRecord).filter((record): record is TradeRecord => record !== null);
-  } catch {
-    return [];
+  if (!response.ok || result.status !== 'success') {
+    throw new Error(result.message ?? `Trade dashboard request failed with HTTP ${response.status}.`);
   }
+
+  return result;
+}
+
+export async function loadTradeRecords(): Promise<TradeRecord[]> {
+  const response = await fetch(TRADE_DASHBOARD_ENDPOINT, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const result = await readTradeDashboardResponse(response);
+  const records = result.records ?? [];
+
+  return records.map((record) => normalizeLegacyRecord(record)).filter((value): value is TradeRecord => value !== null);
 }
 
 function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
@@ -394,54 +412,48 @@ function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
     .filter((leg): leg is TradeLegRecord => leg !== null);
 }
 
-export function saveTradeRecord(draft: TradeRecordDraft, editingId: string | null): TradeRecord {
-  const existing = loadTradeRecords();
-  const now = nowIso();
-  const legs = normalizeDraftLegs(draft.legs);
-  const record: TradeRecord = {
-    id: editingId ?? uuid(),
-    trade_date: draft.trade_date,
-    track_strike: draft.track_strike ? Number(draft.track_strike) : null,
-    expiry: draft.expiry || null,
-    legs,
-    created_at: editingId ? existing.find((item) => item.id === editingId)?.created_at ?? now : now,
-    updated_at: now,
-  };
+export async function saveTradeRecord(draft: TradeRecordDraft, editingId: string | null): Promise<TradeRecord> {
+  const response = await fetch(TRADE_DASHBOARD_ENDPOINT, {
+    method: editingId ? 'PUT' : 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({
+      editingId,
+      record: {
+        id: editingId,
+        trade_date: draft.trade_date,
+        track_strike: draft.track_strike,
+        expiry: draft.expiry,
+        gap_status: draft.gap_status,
+        ema_status: draft.ema_status,
+        legs: draft.legs,
+      },
+    }),
+  });
+  const result = await readTradeDashboardResponse(response);
+  const record = result.record ?? null;
+  if (!record) {
+    throw new Error('Trade dashboard save did not return a record.');
+  }
 
-  const nextRecords = editingId
-    ? existing.map((item) => (item.id === editingId ? record : item))
-    : [record, ...existing];
-
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRecords));
-  return record;
+  return normalizeLegacyRecord(record) ?? record;
 }
 
-export function deleteTradeEntry(recordId: string, tradeId: string) {
-  const existing = loadTradeRecords();
-  const nextRecords = existing
-    .map((record) => {
-      if (record.id !== recordId) return record;
-
-      const nextLegs = record.legs
-        .map((leg) => ({
-          ...leg,
-          trades: leg.trades.filter((trade) => trade.id !== tradeId),
-        }))
-        .filter((leg) => leg.trades.length > 0);
-
-      return nextLegs.length > 0
-        ? {
-            ...record,
-            legs: nextLegs,
-            updated_at: nowIso(),
-          }
-        : null;
-    })
-    .filter((record): record is TradeRecord => record !== null);
-
-  if (typeof window !== 'undefined') {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRecords));
-  }
+export async function deleteTradeEntry(recordId: string, tradeId: string) {
+  const response = await fetch(TRADE_DASHBOARD_ENDPOINT, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify({
+      recordId,
+      tradeId,
+    }),
+  });
+  await readTradeDashboardResponse(response);
 }
 
 export async function fetchTradeContext(tradeDate: string): Promise<TradeContext> {

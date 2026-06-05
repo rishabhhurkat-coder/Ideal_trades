@@ -510,6 +510,20 @@ function formatMonthLabel(date: Date) {
   }).format(date);
 }
 
+function formatSelectedDateDisplay(dateKey: string) {
+  if (!dateKey) return 'Select a trade date';
+  const parsed = parseCalendarDate(dateKey);
+  if (!parsed) return dateKey;
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+  }).format(parsed);
+  return `${weekday}, ${formatExpiryDisplay(dateKey).replace(/-(\d{2})$/, '-20$1')}`;
+}
+
+function getTodayDateKey() {
+  return toCalendarDateKey(new Date());
+}
+
 function ExpiryHeaderIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -541,6 +555,13 @@ type TradeDateCalendarMonth = {
 };
 
 const CALENDAR_WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const CALENDAR_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const GAP_STATUS_OPTIONS = ['Gap Up', 'Gap Down', 'No Gap'];
+const EMA_STATUS_OPTIONS = ['Far EMA', 'Near EMA'];
+
+function toStatusClass(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
 
 function buildTradeDateCalendar(tradeDates: TradeCalendarDateOption[]) {
   const dateMap = new Map(
@@ -714,6 +735,8 @@ function toDraftFromRecord(record: TradeRecord): TradeRecordDraft {
     trade_date: record.trade_date,
     track_strike: record.track_strike?.toString() ?? '',
     expiry: record.expiry ?? '',
+    gap_status: record.gap_status ?? '',
+    ema_status: record.ema_status ?? '',
     legs:
       record.legs.length > 0
         ? record.legs.map((leg) => ({
@@ -733,21 +756,6 @@ function toDraftFromRecord(record: TradeRecord): TradeRecordDraft {
           }))
         : [createLegDraft(1)],
   };
-}
-
-async function appendTradeLog(record: TradeRecord, action: 'create' | 'update') {
-  try {
-    await fetch('/api/ema-intraday/trade-log', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({ record, action }),
-    });
-  } catch {
-    // The trade save should still succeed even if the log write fails.
-  }
 }
 
 function flattenTradeRows(records: TradeRecord[]): TradeRow[] {
@@ -1046,6 +1054,7 @@ function TradeModal({
   const [activeLegIndex, setActiveLegIndex] = useState(0);
   const tradeCalendarMonths = useMemo(() => buildTradeDateCalendar(tradeDates), [tradeDates]);
   const [visibleTradeMonthIndex, setVisibleTradeMonthIndex] = useState(0);
+  const [calendarView, setCalendarView] = useState<'dates' | 'months' | 'years'>('dates');
 
   useEffect(() => {
     if (!open) return;
@@ -1065,6 +1074,7 @@ function TradeModal({
     if (!open) {
       setActiveLegIndex(0);
       setVisibleTradeMonthIndex(0);
+      setCalendarView('dates');
     }
   }, [open]);
 
@@ -1089,12 +1099,22 @@ function TradeModal({
   const isExpiryStage = flowStage === 'expiry';
   const isEntryStage = flowStage === 'entry';
   const isExitStage = flowStage === 'exit';
-  const isSetupReady = Boolean(draft.expiry && draft.trade_date && draft.track_strike.trim());
+  const isSetupReady = Boolean(
+    draft.expiry &&
+      draft.trade_date &&
+      draft.track_strike.trim() &&
+      draft.gap_status.trim() &&
+      draft.ema_status.trim(),
+  );
   const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
   const selectedTradeDateExpiry = selectedTradeDateOption?.expiryDate || draft.expiry || '';
   const visibleTradeMonth = tradeCalendarMonths[visibleTradeMonthIndex] ?? tradeCalendarMonths[0] ?? null;
   const canGoToPreviousTradeMonth = visibleTradeMonthIndex > 0;
   const canGoToNextTradeMonth = visibleTradeMonthIndex < tradeCalendarMonths.length - 1;
+  const visibleTradeYear = visibleTradeMonth ? Number(visibleTradeMonth.monthKey.slice(0, 4)) : new Date().getFullYear();
+  const availableMonthKeys = new Set(tradeCalendarMonths.map((month) => month.monthKey));
+  const availableTradeYears = Array.from(new Set(tradeCalendarMonths.map((month) => Number(month.monthKey.slice(0, 4))))).sort((left, right) => left - right);
+  const todayDateKey = getTodayDateKey();
 
   function updateTradeWithOptionalRule(
     legIndex: number,
@@ -1104,8 +1124,39 @@ function TradeModal({
     onUpdateDraft((current) => updateTradeInLeg(current, legIndex, tradeIndex, updater));
   }
 
+  function moveCalendarYear(direction: -1 | 1) {
+    const targetYear = visibleTradeYear + direction;
+    const targetMonth = visibleTradeMonth ? Number(visibleTradeMonth.monthKey.slice(5, 7)) - 1 : 0;
+    const exactMonthKey = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
+    const exactIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === exactMonthKey);
+    if (exactIndex >= 0) {
+      setVisibleTradeMonthIndex(exactIndex);
+      return;
+    }
+
+    const fallbackIndex = tradeCalendarMonths.findIndex((month) => month.monthKey.startsWith(`${targetYear}-`));
+    if (fallbackIndex >= 0) {
+      setVisibleTradeMonthIndex(fallbackIndex);
+    }
+  }
+
+  function selectCalendarMonth(monthIndex: number) {
+    const monthKey = `${visibleTradeYear}-${String(monthIndex + 1).padStart(2, '0')}`;
+    const nextIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === monthKey);
+    if (nextIndex < 0) return;
+    setVisibleTradeMonthIndex(nextIndex);
+    setCalendarView('dates');
+  }
+
+  function selectCalendarYear(year: number) {
+    const nextIndex = tradeCalendarMonths.findIndex((month) => month.monthKey.startsWith(`${year}-`));
+    if (nextIndex < 0) return;
+    setVisibleTradeMonthIndex(nextIndex);
+    setCalendarView('months');
+  }
+
   return (
-    <div className="trade-modal-backdrop" role="presentation" onClick={onClose}>
+    <div className={`trade-modal-backdrop${isExpiryStage ? ' trade-modal-backdrop--expiry' : ''}`} role="presentation" onClick={onClose}>
       <div
         className={`trade-modal${isExpiryStage ? ' trade-modal--expiry' : ''}`}
         role="dialog"
@@ -1138,175 +1189,196 @@ function TradeModal({
 
               <div className="trade-setup-divider" />
 
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)',
-                  gap: '18px',
-                  alignItems: 'start',
-                }}
-              >
-                <section
-                  style={{
-                    display: 'grid',
-                    gap: '12px',
-                    minWidth: 0,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                    }}
-                  >
-                    <div style={{ display: 'grid', gap: '4px' }}>
-                      <strong style={{ color: '#0d4d47', fontSize: '18px', lineHeight: 1.1 }}>
-                        {visibleTradeMonth?.label ?? 'Trade Date Calendar'}
-                      </strong>
-                      <span style={{ color: '#5f6d69', fontSize: '12px' }}>
-                        Select an eligible trade date. Disabled days are unavailable.
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="trade-date-layout">
+                <section className="trade-date-left-panel">
+                  <div className="trade-date-toolbar">
+                    <div className="trade-date-toolbar-actions">
                       <button
                         type="button"
-                        className="button secondary"
-                        onClick={() => setVisibleTradeMonthIndex((current) => Math.max(current - 1, 0))}
-                        disabled={!canGoToPreviousTradeMonth}
-                        aria-label="Previous month"
+                        className="button secondary trade-date-nav-button"
+                        onClick={() => {
+                          const todayIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === todayDateKey.slice(0, 7));
+                          if (todayIndex >= 0) setVisibleTradeMonthIndex(todayIndex);
+                          setCalendarView('dates');
+                        }}
                       >
-                        Prev
+                        Today
                       </button>
                       <button
                         type="button"
-                        className="button secondary"
-                        onClick={() => setVisibleTradeMonthIndex((current) => Math.min(current + 1, Math.max(tradeCalendarMonths.length - 1, 0)))}
-                        disabled={!canGoToNextTradeMonth}
-                        aria-label="Next month"
+                        className="button secondary trade-date-icon-button"
+                        onClick={() => {
+                          if (calendarView === 'months' || calendarView === 'years') {
+                            moveCalendarYear(-1);
+                          } else {
+                            setVisibleTradeMonthIndex((current) => Math.max(current - 1, 0));
+                          }
+                        }}
+                        disabled={calendarView === 'dates' && !canGoToPreviousTradeMonth}
+                        aria-label={calendarView === 'months' ? 'Previous year' : 'Previous month'}
                       >
-                        Next
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className="button secondary trade-date-icon-button"
+                        onClick={() => {
+                          if (calendarView === 'months' || calendarView === 'years') {
+                            moveCalendarYear(1);
+                          } else {
+                            setVisibleTradeMonthIndex((current) => Math.min(current + 1, Math.max(tradeCalendarMonths.length - 1, 0)));
+                          }
+                        }}
+                        disabled={calendarView === 'dates' && !canGoToNextTradeMonth}
+                        aria-label={calendarView === 'months' ? 'Next year' : 'Next month'}
+                      >
+                        ›
+                      </button>
+                      <button
+                        type="button"
+                        className={`button secondary trade-date-view-button${calendarView === 'dates' ? ' active' : ''}`}
+                        onClick={() => setCalendarView('dates')}
+                      >
+                        Day
+                      </button>
+                      <button
+                        type="button"
+                        className={`button secondary trade-date-view-button${calendarView === 'months' ? ' active' : ''}`}
+                        onClick={() => setCalendarView('months')}
+                      >
+                        Month
+                      </button>
+                      <button
+                        type="button"
+                        className={`button secondary trade-date-view-button${calendarView === 'years' ? ' active' : ''}`}
+                        onClick={() => setCalendarView('years')}
+                      >
+                        Year
                       </button>
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      display: 'grid',
-                      gap: '10px',
-                      border: '1px solid #dfe7e1',
-                      borderRadius: '18px',
-                      padding: '14px',
-                      background: 'linear-gradient(180deg, #ffffff 0%, #fbf8f2 100%)',
-                      boxShadow: '0 10px 24px rgba(19, 55, 52, 0.06)',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                        gap: '6px',
-                      }}
-                    >
-                      {CALENDAR_WEEKDAY_NAMES.map((weekday) => (
-                        <div
-                          key={weekday}
-                          style={{
-                            textAlign: 'center',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            letterSpacing: '0.06em',
-                            textTransform: 'uppercase',
-                            color: 'rgba(15, 93, 82, 0.58)',
-                          }}
-                        >
-                          {weekday}
+                  <div className="trade-date-calendar-shell">
+                    {calendarView === 'years' ? (
+                      <div className="trade-date-year-selector">
+                        <div className="trade-date-year-nav">
+                          <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(-1)} aria-label="Previous year">
+                            â€¹
+                          </button>
+                          <strong>{visibleTradeYear}</strong>
+                          <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(1)} aria-label="Next year">
+                            â€º
+                          </button>
                         </div>
-                      ))}
-                    </div>
-
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                        gap: '6px',
-                      }}
-                    >
-                      {visibleTradeMonth ? (
-                        visibleTradeMonth.days.map((day) => {
-                          const isSelected = draft.trade_date === day.dateKey;
-                          const canSelect = day.inMonth && day.isEligible && !loadingCalendar && !isExitStage;
-                          return (
+                        <div className="trade-date-year-grid">
+                          {availableTradeYears.map((year) => (
                             <button
-                              key={day.dateKey}
+                              key={year}
                               type="button"
-                              disabled={!canSelect}
-                              title={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
-                              aria-label={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
-                              aria-pressed={isSelected}
-                              onClick={() => {
-                                if (!day.option || !canSelect) return;
-                                onUpdateDraft((current) => ({
-                                  ...current,
-                                  trade_date: day.option?.date ?? '',
-                                  expiry: day.option?.expiryDate ?? '',
-                                  track_strike: '',
-                                }));
-                              }}
-                              style={{
-                                display: 'grid',
-                                placeItems: 'center',
-                                minHeight: '48px',
-                                borderRadius: '12px',
-                                border: isSelected ? '1px solid #0c5f53' : '1px solid rgba(12, 94, 83, 0.14)',
-                                background: isSelected
-                                  ? 'rgba(12, 94, 83, 0.14)'
-                                  : day.inMonth
-                                    ? day.isEligible
-                                      ? 'rgba(12, 94, 83, 0.05)'
-                                      : 'rgba(237, 232, 221, 0.42)'
-                                    : 'rgba(237, 232, 221, 0.25)',
-                                color: day.inMonth ? '#102f2b' : 'rgba(16, 47, 43, 0.34)',
-                                fontWeight: 800,
-                                cursor: canSelect ? 'pointer' : 'not-allowed',
-                                opacity: day.inMonth ? 1 : 0.45,
-                                boxShadow: isSelected ? '0 0 0 2px rgba(12, 94, 83, 0.08)' : 'none',
-                              }}
+                              className={`trade-date-year-tile${visibleTradeYear === year ? ' active' : ''}`}
+                              onClick={() => selectCalendarYear(year)}
                             >
-                              <span style={{ fontSize: '13px', lineHeight: 1 }}>{day.dayLabel}</span>
+                              {year}
                             </button>
-                          );
-                        })
-                      ) : (
-                        <div
-                          style={{
-                            gridColumn: '1 / -1',
-                            padding: '18px',
-                            borderRadius: '12px',
-                            border: '1px dashed rgba(12, 94, 83, 0.18)',
-                            color: '#5f6d69',
-                            textAlign: 'center',
-                            background: 'rgba(255, 255, 255, 0.7)',
-                          }}
-                        >
-                          {loadingCalendar ? 'Loading trade dates...' : 'No trade dates available'}
+                          ))}
                         </div>
-                      )}
+                      </div>
+                    ) : calendarView === 'months' ? (
+                      <div className="trade-date-month-selector">
+                        <div className="trade-date-year-nav">
+                          <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(-1)} aria-label="Previous year">
+                            ‹
+                          </button>
+                          <strong>{visibleTradeYear}</strong>
+                          <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(1)} aria-label="Next year">
+                            ›
+                          </button>
+                        </div>
+                        <div className="trade-date-month-grid">
+                          {CALENDAR_MONTH_NAMES.map((month, monthIndex) => {
+                            const monthKey = `${visibleTradeYear}-${String(monthIndex + 1).padStart(2, '0')}`;
+                            const isActive = visibleTradeMonth?.monthKey === monthKey;
+                            const hasDates = availableMonthKeys.has(monthKey);
+                            return (
+                              <button
+                                key={month}
+                                type="button"
+                                className={`trade-date-month-tile${isActive ? ' active' : ''}`}
+                                disabled={!hasDates}
+                                onClick={() => selectCalendarMonth(monthIndex)}
+                              >
+                                {month}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="trade-date-calendar-view">
+                        <button type="button" className="trade-date-month-heading" onClick={() => setCalendarView('months')}>
+                          <span>{visibleTradeMonth?.label ?? 'Trade Date Calendar'}</span>
+                          <span aria-hidden="true">▼</span>
+                        </button>
+                        <div className="trade-date-weekdays">
+                          {CALENDAR_WEEKDAY_NAMES.map((weekday) => (
+                            <span key={weekday}>{weekday}</span>
+                          ))}
+                        </div>
+                        <div className="trade-date-days">
+                          {visibleTradeMonth ? (
+                            visibleTradeMonth.days.map((day) => {
+                              const isSelected = draft.trade_date === day.dateKey;
+                              const isToday = day.dateKey === todayDateKey;
+                              const canSelect = day.inMonth && day.isEligible && !loadingCalendar && !isExitStage;
+                              return (
+                                <button
+                                  key={day.dateKey}
+                                  type="button"
+                                  className={`trade-date-day${day.inMonth && day.isEligible ? ' available' : ' unavailable'}${isSelected ? ' selected' : ''}${isToday ? ' today' : ''}`}
+                                  disabled={!canSelect}
+                                  tabIndex={canSelect ? 0 : -1}
+                                  title={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
+                                  aria-label={day.option ? formatTradeCalendarOption(day.option) : day.dateKey}
+                                  aria-pressed={isSelected}
+                                  onClick={() => {
+                                    if (!day.option || !canSelect) return;
+                                    onUpdateDraft((current) => ({
+                                      ...current,
+                                      trade_date: day.option?.date ?? '',
+                                      expiry: day.option?.expiryDate ?? '',
+                                      track_strike: '',
+                                    }));
+                                  }}
+                                >
+                                  {day.dayLabel}
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="trade-date-calendar-empty">{loadingCalendar ? 'Loading trade dates...' : 'No trade dates available'}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="trade-date-legend">
+                      <span><i className="trade-date-swatch available" /> Applicable (Eligible to Select)</span>
+                      <span><i className="trade-date-swatch unavailable" /> Not Applicable</span>
+                      <span><i className="trade-date-swatch today" /> Today</span>
                     </div>
                   </div>
                 </section>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gap: '12px',
-                    alignContent: 'start',
-                    minWidth: 0,
-                  }}
-                >
+                <div className="trade-date-side-panel">
+                  <label className="trade-setup-field trade-selected-date-field">
+                    <span>Selected Date</span>
+                    <div className="trade-selected-date-value">
+                      <ExpiryHeaderIcon />
+                      <strong>{formatSelectedDateDisplay(draft.trade_date)}</strong>
+                    </div>
+                  </label>
                   <label className="trade-setup-field">
-                    <span>Expiry</span>
+                    <span>Expiry Date</span>
                     <input
                       className="trade-theme-control"
                       value={selectedTradeDateExpiry ? formatExpiryDisplay(selectedTradeDateExpiry) : 'Derived from trade date'}
@@ -1315,21 +1387,7 @@ function TradeModal({
                   </label>
                   <label className="trade-setup-field">
                     <span>DTE</span>
-                    <input
-                      className="trade-theme-control"
-                      value={formatDteValue(selectedTradeDateOption?.dte ?? null)}
-                      readOnly
-                      placeholder="Derived from trade date"
-                    />
-                  </label>
-                  <label className="trade-setup-field">
-                    <span>Eff DTE</span>
-                    <input
-                      className="trade-theme-control"
-                      value={formatEffDteValue(selectedTradeDateOption?.effDte ?? null)}
-                      readOnly
-                      placeholder="Derived from trade date"
-                    />
+                    <input className="trade-theme-control" value={formatDteValue(selectedTradeDateOption?.dte ?? null)} readOnly placeholder="Derived from trade date" />
                   </label>
                   <label className="trade-setup-field">
                     <span>Strike</span>
@@ -1342,6 +1400,32 @@ function TradeModal({
                       disabled={isExitStage || !draft.trade_date}
                       onChange={(event) => onUpdateDraft((current) => ({ ...current, track_strike: event.target.value }))}
                     />
+                  </label>
+                  <label className="trade-setup-field">
+                    <span>GAP Status</span>
+                    <select
+                      className={`trade-theme-control trade-status-control${draft.gap_status ? ` status-${toStatusClass(draft.gap_status)}` : ''}`}
+                      value={draft.gap_status}
+                      onChange={(event) => onUpdateDraft((current) => ({ ...current, gap_status: event.target.value }))}
+                    >
+                      <option value="">Select gap status</option>
+                      {GAP_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="trade-setup-field">
+                    <span>EMA Status</span>
+                    <select
+                      className={`trade-theme-control trade-status-control${draft.ema_status ? ` status-${toStatusClass(draft.ema_status)}` : ''}`}
+                      value={draft.ema_status}
+                      onChange={(event) => onUpdateDraft((current) => ({ ...current, ema_status: event.target.value }))}
+                    >
+                      <option value="">Select EMA status</option>
+                      {EMA_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
                   </label>
                 </div>
               </div>
@@ -1641,7 +1725,7 @@ function TradeModal({
               className="button primary"
               type="button"
               onClick={onSave}
-              disabled={saving || !draft.trade_date}
+              disabled={saving || !isSetupReady}
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -1969,8 +2053,24 @@ export function TradeDashboardPage() {
   );
 
   useEffect(() => {
-    setRecords(loadTradeRecords());
-    setLoading(false);
+    let active = true;
+
+    void loadTradeRecords()
+      .then((loadedRecords) => {
+        if (!active) return;
+        setRecords(loadedRecords);
+      })
+      .catch(() => {
+        if (!active) return;
+        setRecords([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -2217,8 +2317,13 @@ export function TradeDashboardPage() {
     return appliedColumnFilters[column].length > 0 ? appliedColumnFilters[column] : allColumnValues[column];
   }
 
-  function refreshRecords() {
-    setRecords(loadTradeRecords());
+  async function refreshRecords() {
+    try {
+      const loadedRecords = await loadTradeRecords();
+      setRecords(loadedRecords);
+    } catch {
+      setRecords([]);
+    }
   }
 
   function beginAddTradeDay() {
@@ -2274,11 +2379,11 @@ export function TradeDashboardPage() {
     beginEditTradeDay(record, tradeId);
   }
 
-  function cancelTradeFromDetail() {
+  async function cancelTradeFromDetail() {
     if (!detailRow) return;
     if (!window.confirm(`Cancel trade ${detailRow.option} for leg ${detailRow.legNo} on ${detailRow.tradeDate}?`)) return;
-    deleteTradeEntry(detailRow.recordId, detailRow.tradeId);
-    refreshRecords();
+    await deleteTradeEntry(detailRow.recordId, detailRow.tradeId);
+    await refreshRecords();
     closeTradeDetail();
   }
 
@@ -2286,7 +2391,7 @@ export function TradeDashboardPage() {
     setSaving(true);
     setError(null);
     try {
-      const savedRecord = saveTradeRecord(draft, editingId);
+      const savedRecord = await saveTradeRecord(draft, editingId);
       const selectedTradeQuantity =
         selectedTradeId !== null
           ? draft.legs.flatMap((leg) => leg.trades).find((trade) => trade.id === selectedTradeId)?.quantity ?? null
@@ -2294,11 +2399,10 @@ export function TradeDashboardPage() {
       if (typeof selectedTradeQuantity === 'number' && Number.isFinite(selectedTradeQuantity) && selectedTradeQuantity > 0) {
         rememberTradeQuantity(String(selectedTradeQuantity));
       }
-      void appendTradeLog(savedRecord, editingId ? 'update' : 'create');
       if (!editingId) {
         setEditingId(savedRecord.id);
       }
-      refreshRecords();
+      await refreshRecords();
       if (nextStage === 'entry') {
         setFlowStage('entry');
         setSelectedTradeId(savedRecord.legs[0]?.trades[0]?.id ?? null);
