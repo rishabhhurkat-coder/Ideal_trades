@@ -73,6 +73,29 @@ type DashboardRow = TradeRow & {
 
 type ColumnFilterMap = Record<DashboardColumnKey, string[]>;
 
+type TradeDashboardSettings = {
+  allowedDte: number[];
+  emaProximity: number[];
+  gapValues: number[];
+};
+
+type TradeDashboardSettingsKey = keyof TradeDashboardSettings;
+
+type SettingsOptionGroupProps = {
+  label: string;
+  description: string;
+  values: number[];
+  selectedValues: number[];
+  onToggle: (value: number) => void;
+};
+
+type TradeDashboardSettingsModalProps = {
+  open: boolean;
+  settings: TradeDashboardSettings;
+  onClose: () => void;
+  onSave: (settings: TradeDashboardSettings) => void;
+};
+
 const DASHBOARD_COLUMN_KEYS: DashboardColumnKey[] = [
   'expiry',
   'trackStrike',
@@ -93,6 +116,14 @@ const DASHBOARD_COLUMN_KEYS: DashboardColumnKey[] = [
 ];
 
 const DASHBOARD_TILE_KEYS: DashboardPreset[] = ['all', 'today', 'week', 'month', 'profitable', 'losing', 'maxDd', 'custom'];
+const TRADE_DTE_OPTIONS = [0, 1, 2, 3, 4, 5];
+const TRADE_EMA_PROXIMITY_OPTIONS = [50, 100, 150, 200, 250, 300, 400, 500];
+const TRADE_GAP_OPTIONS = [0, 25, 50, 75, 100, 125, 150, 175, 200];
+const DEFAULT_TRADE_DASHBOARD_SETTINGS: TradeDashboardSettings = {
+  allowedDte: [0, 1],
+  emaProximity: [100],
+  gapValues: [],
+};
 
 function createEmptyColumnFilters(): ColumnFilterMap {
   return DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
@@ -113,6 +144,171 @@ function formatSignedCurrency(value: number) {
 function formatDashboardNumber(value: number | null) {
   if (value === null) return '-';
   return value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function cloneTradeDashboardSettings(settings: TradeDashboardSettings): TradeDashboardSettings {
+  return {
+    allowedDte: [...settings.allowedDte],
+    emaProximity: [...settings.emaProximity],
+    gapValues: [...settings.gapValues],
+  };
+}
+
+function formatSelectedSettingValues(values: number[]) {
+  return values.length > 0 ? values.join(', ') : 'None selected';
+}
+
+function sortNumericValues(values: number[]) {
+  return [...values].sort((left, right) => left - right);
+}
+
+function SettingsOptionGroup({ label, description, values, selectedValues, onToggle }: SettingsOptionGroupProps) {
+  return (
+    <section className="trade-settings-section">
+      <div className="trade-settings-section-copy">
+        <h4>{label}</h4>
+        <p>{description}</p>
+      </div>
+      <div className="trade-settings-option-grid" role="group" aria-label={label}>
+        {values.map((value) => {
+          const isActive = selectedValues.includes(value);
+          return (
+            <button
+              key={value}
+              className={`trade-settings-option${isActive ? ' active' : ''}`}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => onToggle(value)}
+            >
+              {value}
+            </button>
+          );
+        })}
+      </div>
+      <div className="trade-settings-selection">
+        <span>Current selection</span>
+        <strong>{formatSelectedSettingValues(selectedValues)}</strong>
+      </div>
+    </section>
+  );
+}
+
+function TradeDashboardSettingsModal({ open, settings, onClose, onSave }: TradeDashboardSettingsModalProps) {
+  const [draft, setDraft] = useState<TradeDashboardSettings>(() => cloneTradeDashboardSettings(settings));
+
+  useEffect(() => {
+    if (open) {
+      setDraft(cloneTradeDashboardSettings(settings));
+    }
+  }, [open, settings]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
+  function toggleSettingValue(key: TradeDashboardSettingsKey, value: number) {
+    setDraft((current) => {
+      const currentValues = current[key];
+      const nextValues = currentValues.includes(value)
+        ? currentValues.filter((entry) => entry !== value)
+        : sortNumericValues([...currentValues, value]);
+      return {
+        ...current,
+        [key]: nextValues,
+      };
+    });
+  }
+
+  function handleSave() {
+    onSave(cloneTradeDashboardSettings(draft));
+  }
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="trade-settings-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="trade-settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="trade-dashboard-settings-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="trade-settings-modal-header">
+          <div className="trade-settings-modal-title">
+            <span>Dashboard</span>
+            <h2 id="trade-dashboard-settings-title">Trade Dashboard Settings</h2>
+          </div>
+          <button className="button secondary trade-settings-close" type="button" onClick={onClose} aria-label="Close settings">
+            ✕
+          </button>
+        </div>
+
+        <div className="trade-settings-modal-body">
+          <SettingsOptionGroup
+            label="Allowed DTE Values"
+            description="Controls the selected allowed DTE state for future expiry filtering."
+            values={TRADE_DTE_OPTIONS}
+            selectedValues={draft.allowedDte}
+            onToggle={(value) => toggleSettingValue('allowedDte', value)}
+          />
+
+          <SettingsOptionGroup
+            label="Near EMA 1000 Values"
+            description="Controls the near-EMA configuration state for future dashboard behavior."
+            values={TRADE_EMA_PROXIMITY_OPTIONS}
+            selectedValues={draft.emaProximity}
+            onToggle={(value) => toggleSettingValue('emaProximity', value)}
+          />
+
+          <SettingsOptionGroup
+            label="Gap Values"
+            description="Stores the gap configuration state for future dashboard behavior."
+            values={TRADE_GAP_OPTIONS}
+            selectedValues={draft.gapValues}
+            onToggle={(value) => toggleSettingValue('gapValues', value)}
+          />
+        </div>
+
+        <div className="trade-settings-footer">
+          <div className="trade-settings-summary">
+            <div>
+              <span>Allowed DTE Values</span>
+              <strong>{formatSelectedSettingValues(draft.allowedDte)}</strong>
+            </div>
+            <div>
+              <span>Near EMA 1000 Values</span>
+              <strong>{formatSelectedSettingValues(draft.emaProximity)}</strong>
+            </div>
+            <div>
+              <span>Gap Values</span>
+              <strong>{formatSelectedSettingValues(draft.gapValues)}</strong>
+            </div>
+          </div>
+
+          <div className="trade-settings-actions">
+            <button className="button secondary" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="button primary" type="button" onClick={handleSave}>
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DownloadIcon() {
@@ -954,12 +1150,17 @@ function TradeModal({
         <div className="trade-modal-body">
           {isExpiryStage ? (
             <section className="trade-form-section trade-setup-section">
-              <div className="trade-setup-heading">
+              <div className="trade-setup-heading" style={{ justifyContent: 'space-between', gap: '16px' }}>
                 <div className="trade-setup-brand">
                   <div className="trade-setup-icon">
                     <ExpiryHeaderIcon />
                   </div>
-                  <h4>EXPIRY SELECTION</h4>
+                  <h4>Trade Date Calendar</h4>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
+                  <button className="button secondary trade-settings-button" type="button" onClick={openSettings} aria-label="Open trade dashboard settings">
+                    <SettingsIcon />
+                  </button>
                 </div>
               </div>
 
@@ -1880,6 +2081,10 @@ export function TradeDashboardPage() {
   const [draft, setDraft] = useState<TradeRecordDraft>(emptyTradeDraft());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tradeDashboardSettings, setTradeDashboardSettings] = useState<TradeDashboardSettings>(
+    () => cloneTradeDashboardSettings(DEFAULT_TRADE_DASHBOARD_SETTINGS),
+  );
 
   useEffect(() => {
     setRecords(loadTradeRecords());
@@ -2165,6 +2370,19 @@ export function TradeDashboardPage() {
     setDetailRow(null);
   }
 
+  function openSettings() {
+    setSettingsOpen(true);
+  }
+
+  function closeSettings() {
+    setSettingsOpen(false);
+  }
+
+  function saveSettings(nextSettings: TradeDashboardSettings) {
+    setTradeDashboardSettings(cloneTradeDashboardSettings(nextSettings));
+    setSettingsOpen(false);
+  }
+
   function editTradeFromDetail() {
     if (!detailRow) return;
     const { record, tradeId } = detailRow;
@@ -2431,6 +2649,7 @@ export function TradeDashboardPage() {
         onSaveAndExit={() => void handleSave('exit')}
         onBackToEntry={flowStage === 'exit' ? backToEntry : backToExpiry}
       />
+      <TradeDashboardSettingsModal open={settingsOpen} settings={tradeDashboardSettings} onClose={closeSettings} onSave={saveSettings} />
       <datalist id={TIME_DATALIST_ID}>
         {TIME_OPTIONS.map((timeOption) => (
           <option key={timeOption.value} value={timeOption.value}>
