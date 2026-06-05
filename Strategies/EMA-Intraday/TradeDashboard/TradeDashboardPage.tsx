@@ -1093,8 +1093,6 @@ function TradeModal({
     setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
   }, [draft.trade_date, open, tradeCalendarMonths]);
 
-  if (!open) return null;
-
   const activeLeg = draft.legs[activeLegIndex] ?? draft.legs[0];
   const activeTradeCount = activeLeg?.trades.length ?? 0;
   const isExpiryStage = flowStage === 'expiry';
@@ -1167,6 +1165,8 @@ function TradeModal({
     setVisibleTradeMonthIndex(nextIndex);
     setCalendarView('months');
   }
+
+  if (!open) return null;
 
   return (
     <div className={`trade-modal-backdrop${isExpiryStage ? ' trade-modal-backdrop--expiry' : ''}`} role="presentation" onClick={onClose}>
