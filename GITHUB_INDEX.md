@@ -66,9 +66,8 @@ This index covers the important files in the current Ideal Trades repository.
 | `Strategies/EMA-Intraday/HistoricalData/build_historical_db.py` | Builds the local historical SQLite database. |
 | `Strategies/EMA-Intraday/HistoricalData/get_trade_context.py` | Resolves trade-date context for the historical workflow. |
 | `Strategies/EMA-Intraday/HistoricalData/get_trade_calendar.py` | Resolves expiry and calendar context for the historical workflow. |
-| `Strategies/EMA-Intraday/HistoricalData/README.md` | Notes for the historical-data workflow. |
-| `Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db` | Local SQLite cache for historical cash data. |
-| `Strategies/EMA-Intraday/HistoricalData/Data/nifty_expiry_dte.db` | Local SQLite expiry/date lookup cache. |
+| `Strategies/EMA-Intraday/HistoricalData/README.md` | Notes for the historical-data workflow, including Supabase-backed expiry calendar context. |
+| `Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db` | Local SQLite cache for historical candle data. |
 | `Strategies/EMA-Intraday/HistoricalData/Data/metadata.json` | Metadata for the local historical database. |
 
 ## Workspace Support Files

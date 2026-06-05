@@ -526,10 +526,40 @@ function snapshotToHistoricalMetadata(snapshot: HistoricalDbSnapshot): Historica
   };
 }
 
-function runPythonJsonCommand(args: string[], input = ''): Promise<{ stdout: string; stderr: string }> {
+function buildSupabaseChildEnv(env: Record<string, string>) {
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || '';
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '';
+
+  return {
+    ...(supabaseUrl
+      ? {
+          SUPABASE_URL: supabaseUrl,
+          VITE_SUPABASE_URL: supabaseUrl,
+        }
+      : {}),
+    ...(supabaseAnonKey
+      ? {
+          SUPABASE_ANON_KEY: supabaseAnonKey,
+          VITE_SUPABASE_ANON_KEY: supabaseAnonKey,
+        }
+      : {}),
+  };
+}
+
+function runPythonJsonCommand(
+  args: string[],
+  input = '',
+  extraEnv: Record<string, string> = {},
+): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const normalizedArgs = args[0]?.startsWith('-') ? args.slice(1) : args;
-    const child = spawn(pythonCommand, normalizedArgs, { windowsHide: true });
+    const child = spawn(pythonCommand, normalizedArgs, {
+      windowsHide: true,
+      env: {
+        ...process.env,
+        ...extraEnv,
+      },
+    });
     let stdout = '';
     let stderr = '';
 
@@ -580,9 +610,9 @@ async function readHistoricalDatabaseSnapshot(): Promise<HistoricalDbSnapshot> {
   }
 }
 
-async function readTradeContextForDate(tradeDate: string): Promise<TradeContextResponse> {
+async function readTradeContextForDate(tradeDate: string, supabaseEnv: Record<string, string> = {}): Promise<TradeContextResponse> {
   try {
-    const { stdout } = await runPythonJsonCommand(['-3', tradeContextScriptPath, tradeDate]);
+    const { stdout } = await runPythonJsonCommand(['-3', tradeContextScriptPath, tradeDate], '', supabaseEnv);
     return JSON.parse(stdout.trim()) as TradeContextResponse;
   } catch (error) {
     if (error && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string' && error.stdout.trim()) {
@@ -600,14 +630,14 @@ async function readTradeContextForDate(tradeDate: string): Promise<TradeContextR
   }
 }
 
-async function readTradeCalendar(expiry: string | null): Promise<TradeCalendarResponse> {
+async function readTradeCalendar(expiry: string | null, supabaseEnv: Record<string, string> = {}): Promise<TradeCalendarResponse> {
   try {
     const args = ['-3', tradeCalendarScriptPath];
     if (expiry) {
       args.push(expiry);
     }
 
-    const { stdout } = await runPythonJsonCommand(args);
+    const { stdout } = await runPythonJsonCommand(args, '', supabaseEnv);
     return JSON.parse(stdout.trim()) as TradeCalendarResponse;
   } catch (error) {
     if (error instanceof Error && 'stdout' in error && typeof error.stdout === 'string' && error.stdout.trim()) {
@@ -708,6 +738,7 @@ function mergeCandles(existingCandles: ValidatedCandle[], downloadedCandles: Val
 function kiteSessionPlugin(env: Record<string, string>): Plugin {
   const apiKey = env.KITE_API_KEY || env.VITE_KITE_API_KEY || defaultKiteApiKey;
   const apiSecret = env.KITE_API_SECRET || env.VITE_KITE_API_SECRET;
+  const supabaseEnv = buildSupabaseChildEnv(env);
 
   return {
     name: 'kite-session-api',
@@ -725,7 +756,7 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
           return;
         }
 
-        const result = await readTradeContextForDate(tradeDate);
+        const result = await readTradeContextForDate(tradeDate, supabaseEnv);
         const statusCode = result.status === 'success' ? 200 : 422;
         sendJson(response, statusCode, result);
       });
@@ -738,7 +769,7 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
 
         const requestUrl = new URL(request.url || '', 'http://localhost');
         const expiry = requestUrl.searchParams.get('expiry')?.trim() || null;
-        const result = await readTradeCalendar(expiry);
+        const result = await readTradeCalendar(expiry, supabaseEnv);
         const statusCode = result.status === 'success' ? 200 : 422;
         sendJson(response, statusCode, result);
       });

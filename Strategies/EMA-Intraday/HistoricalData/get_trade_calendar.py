@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import os
 import sys
-from pathlib import Path
+
+import requests
 
 
 def emit(payload: dict) -> int:
@@ -17,74 +18,108 @@ def fail(message: str) -> int:
     return emit({"status": "error", "message": message})
 
 
-def read_expiry_rows(cur: sqlite3.Cursor):
-    return cur.execute(
-        """
-        SELECT
-            "Expiry",
-            MIN(CASE WHEN "DTE" IN (0, 1) THEN "Date" END) AS first_date,
-            MAX(CASE WHEN "DTE" IN (0, 1) THEN "Date" END) AS last_date,
-            SUM(CASE WHEN "DTE" IN (0, 1) THEN 1 ELSE 0 END) AS eligible_dates
-        FROM expiry_dte
-        GROUP BY "Expiry"
-        ORDER BY first_date IS NULL, first_date ASC, "Expiry" ASC
-        """
-    ).fetchall()
+def get_supabase_config() -> tuple[str, str]:
+    supabase_url = (
+        os.environ.get("SUPABASE_URL")
+        or os.environ.get("VITE_SUPABASE_URL")
+        or ""
+    ).strip()
+    supabase_key = (
+        os.environ.get("SUPABASE_ANON_KEY")
+        or os.environ.get("VITE_SUPABASE_ANON_KEY")
+        or ""
+    ).strip()
+
+    if not supabase_url or not supabase_key:
+        raise RuntimeError("Supabase configuration is missing.")
+
+    return supabase_url.rstrip("/"), supabase_key
+
+
+def fetch_expiry_rows(expiry: str | None = None):
+    supabase_url, supabase_key = get_supabase_config()
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": f"Bearer {supabase_key}",
+        "Accept-Profile": "ideal_trades",
+    }
+    params = {
+        "select": "trade_date,expiry_date,dte,eff_dte",
+    }
+
+    if expiry:
+        params["expiry_date"] = f"eq.{expiry}"
+        params["dte"] = "in.(0,1)"
+        params["order"] = "trade_date.asc,dte.asc"
+    else:
+        params["dte"] = "in.(0,1)"
+        params["order"] = "expiry_date.asc,trade_date.asc,dte.asc"
+
+    response = requests.get(
+        f"{supabase_url}/rest/v1/expiry_calendar",
+        headers=headers,
+        params=params,
+        timeout=60,
+    )
+    if not response.ok:
+        raise RuntimeError(
+            f"Supabase request failed with HTTP {response.status_code}: {response.text[:300]}"
+        )
+
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise RuntimeError("Supabase returned an unexpected payload.")
+
+    return payload
 
 
 def main() -> int:
-    data_dir = Path(__file__).resolve().parent / "Data"
-    expiry_db = data_dir / "nifty_expiry_dte.db"
-
-    if not expiry_db.exists():
-        return fail("Expiry database was not found.")
-
     expiry = sys.argv[1].strip() if len(sys.argv) > 1 else ""
 
     try:
-        with sqlite3.connect(expiry_db) as con:
-            cur = con.cursor()
+        if not expiry:
+            rows = fetch_expiry_rows(None)
+            grouped: dict[str, dict[str, object]] = {}
+            for row in rows:
+                expiry_date = str(row.get("expiry_date") or "")
+                trade_date = str(row.get("trade_date") or "")
+                if not expiry_date or not trade_date:
+                    continue
 
-            if not expiry:
-                rows = read_expiry_rows(cur)
-                return emit(
+                bucket = grouped.setdefault(
+                    expiry_date,
                     {
-                        "status": "success",
-                        "expiries": [
-                            {
-                                "expiry": str(row[0]),
-                                "firstDate": str(row[1] or ""),
-                                "lastDate": str(row[2] or ""),
-                                "eligibleDates": int(row[3] or 0),
-                            }
-                            for row in rows
-                        ],
-                    }
+                        "expiry": expiry_date,
+                        "firstDate": trade_date,
+                        "lastDate": trade_date,
+                        "eligibleDates": 0,
+                    },
                 )
+                if trade_date < str(bucket["firstDate"]):
+                    bucket["firstDate"] = trade_date
+                if trade_date > str(bucket["lastDate"]):
+                    bucket["lastDate"] = trade_date
+                bucket["eligibleDates"] = int(bucket["eligibleDates"]) + 1
 
-            dates = cur.execute(
-                """
-                SELECT "Date", "DTE"
-                FROM expiry_dte
-                WHERE "Expiry" = ? AND "DTE" IN (0, 1)
-                ORDER BY "Date" ASC, "DTE" ASC
-                """,
-                (expiry,),
-            ).fetchall()
+            expiries = sorted(grouped.values(), key=lambda item: (str(item["firstDate"]), str(item["expiry"])))
+            return emit({"status": "success", "expiries": expiries})
 
-            return emit(
-                {
-                    "status": "success",
-                    "expiry": expiry,
-                    "dates": [
-                        {
-                            "date": str(row[0]),
-                            "dte": int(row[1]),
-                        }
-                        for row in dates
-                    ],
-                }
-            )
+        dates = fetch_expiry_rows(expiry)
+
+        return emit(
+            {
+                "status": "success",
+                "expiry": expiry,
+                "dates": [
+                    {
+                        "date": str(row.get("trade_date") or ""),
+                        "dte": int(row.get("dte") or 0),
+                    }
+                    for row in dates
+                    if row.get("trade_date")
+                ],
+            }
+        )
     except Exception as error:
         return fail(str(error))
 

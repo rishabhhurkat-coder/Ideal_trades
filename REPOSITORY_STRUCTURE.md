@@ -112,12 +112,11 @@ Important files:
 - `Strategies/EMA-Intraday/HistoricalData/get_trade_context.py`
 - `Strategies/EMA-Intraday/HistoricalData/README.md`
 - `Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db`
-- `Strategies/EMA-Intraday/HistoricalData/Data/nifty_expiry_dte.db`
 - `Strategies/EMA-Intraday/HistoricalData/Data/metadata.json`
 
 Role:
 
-- Kite session handling, historical download flow, and local SQLite persistence.
+- Kite session handling, historical download flow, local historical candle persistence, and Supabase-backed expiry context.
 
 ### `Strategies/EMA-Intraday/TradeDashboard`
 
@@ -160,7 +159,6 @@ These contain strategy-specific notes and config stubs.
 ### Database and data files
 
 - `Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db`
-- `Strategies/EMA-Intraday/HistoricalData/Data/nifty_expiry_dte.db`
 - `Strategies/EMA-Intraday/HistoricalData/Data/metadata.json`
 - `Strategies/EMA-Intraday/TradeDashboard/trade-log.md`
 

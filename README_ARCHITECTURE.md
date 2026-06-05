@@ -54,7 +54,6 @@ Ideal Trades/
         types.ts
         Data/
           ema_intraday_historical.db
-          nifty_expiry_dte.db
           metadata.json
       TradeDashboard/
         TradeDashboardPage.tsx
@@ -117,12 +116,13 @@ The live master-data flow is:
 - EMA Intraday Masters reads and writes `ideal_trades.entry_reasons`, `ideal_trades.exit_reasons`, and `ideal_trades.trade_transition_rules`.
 - `activity_log` is used for transition audit records, but it is currently empty.
 
-## SQLite Architecture
+## Data Architecture
 
-Historical market data is stored locally in SQLite under:
+Historical candle data is stored locally in SQLite under:
 
 - `Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db`
-- `Strategies/EMA-Intraday/HistoricalData/Data/nifty_expiry_dte.db`
+
+Expiry context is stored in Supabase under `ideal_trades.expiry_calendar`.
 
 Supporting scripts and metadata:
 
@@ -131,7 +131,7 @@ Supporting scripts and metadata:
 - `Strategies/EMA-Intraday/HistoricalData/get_trade_calendar.py`
 - `Strategies/EMA-Intraday/HistoricalData/Data/metadata.json`
 
-The historical workflow uses SQLite as the local read model for cash-data snapshots and expiry context. The app server can read the local database directly from `Helper/App/vite.config.ts` middleware.
+The historical workflow uses SQLite as the local read model for cash-data snapshots and Supabase as the read model for expiry context. The app server reads both through `Helper/App/vite.config.ts` middleware.
 
 ## Historical Data Architecture
 
