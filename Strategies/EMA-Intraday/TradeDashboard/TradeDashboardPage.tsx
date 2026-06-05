@@ -1365,6 +1365,15 @@ function TradeModal({
                     />
                   </label>
                   <label className="trade-setup-field">
+                    <span>DTE</span>
+                    <input
+                      className="trade-theme-control"
+                      value={selectedTradeDateOption?.dte ?? ''}
+                      readOnly
+                      placeholder="Derived from trade date"
+                    />
+                  </label>
+                  <label className="trade-setup-field">
                     <span>Strike</span>
                     <input
                       className="trade-theme-control"

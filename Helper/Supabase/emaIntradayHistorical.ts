@@ -22,6 +22,7 @@ export type TradeCalendarExpiryOption = {
 export type TradeCalendarDateOption = {
   date: string;
   expiry: string;
+  dte: number | null;
 };
 
 export type TradeCalendarResponse = {
@@ -138,27 +139,49 @@ function formatDate(value: unknown) {
 
 export async function readTradeCalendar(client: IdealTradesClient): Promise<TradeCalendarResponse> {
   const universeClient = typeof client.schema === 'function' ? client.schema('emaintraday') : client;
-  const { data, error } = await universeClient
-    .from('candidate_universe')
-    .select('trade_date,expiry')
-    .order('trade_date', { ascending: true })
-    .order('expiry', { ascending: true });
+  const expiryCalendarClient = typeof client.schema === 'function' ? client.schema('ideal_trades') : client;
 
-  if (error) {
+  const [universeResult, expiryResult] = await Promise.all([
+    universeClient
+      .from('candidate_universe')
+      .select('trade_date,expiry')
+      .order('trade_date', { ascending: true })
+      .order('expiry', { ascending: true }),
+    expiryCalendarClient
+      .from('expiry_calendar')
+      .select('trade_date,dte')
+      .order('trade_date', { ascending: true }),
+  ]);
+
+  if (universeResult.error) {
     return {
       status: 'error',
-      message: error.message ?? 'Unable to load trade dates from Supabase.',
+      message: universeResult.error.message ?? 'Unable to load trade dates from Supabase.',
+    };
+  }
+  if (expiryResult.error) {
+    return {
+      status: 'error',
+      message: expiryResult.error.message ?? 'Unable to load DTE values from Supabase.',
     };
   }
 
-  const rows = Array.isArray(data) ? (data as Array<{ trade_date?: string; expiry?: string }>) : [];
+  const universeRows = Array.isArray(universeResult.data) ? (universeResult.data as Array<{ trade_date?: string; expiry?: string }>) : [];
+  const expiryRows = Array.isArray(expiryResult.data) ? (expiryResult.data as Array<{ trade_date?: string; dte?: number | null }>) : [];
+  const expiryByDate = new Map<string, number | null>();
+  for (const row of expiryRows) {
+    const date = formatDate(row.trade_date);
+    if (!date || expiryByDate.has(date)) continue;
+    expiryByDate.set(date, typeof row.dte === 'number' ? row.dte : row.dte === null ? null : Number(row.dte));
+  }
+
   const seen = new Set<string>();
-  const dates = rows.reduce<TradeCalendarDateOption[]>((accumulator, row) => {
+  const dates = universeRows.reduce<TradeCalendarDateOption[]>((accumulator, row) => {
     const date = formatDate(row.trade_date);
     const expiry = formatDate(row.expiry);
     if (!date || !expiry || seen.has(date)) return accumulator;
     seen.add(date);
-    accumulator.push({ date, expiry });
+    accumulator.push({ date, expiry, dte: expiryByDate.get(date) ?? null });
     return accumulator;
   }, []);
 

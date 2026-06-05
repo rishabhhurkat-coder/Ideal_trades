@@ -43,6 +43,7 @@ export type TradeLegDraft = {
 export type TradeCalendarDateOption = {
   date: string;
   expiry: string;
+  dte: number | null;
 };
 
 export type TradeCalendarResponse = {
