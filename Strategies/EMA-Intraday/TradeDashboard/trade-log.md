@@ -1080,3 +1080,66 @@ New entries are written by the local app server when a trade day is saved from t
     - Exit Price: -
     - PL: -
 
+### 2026-06-05T08:18:11.440Z - Saved Trade
+- Record ID: 7bc77877-7c52-4708-b183-46354344f5a5
+- Trade Date: 2021-01-13
+- Expiry: 2021-01-14
+- Track Strike: 14600
+- Created At: 2026-06-05T08:18:11.422Z
+- Updated At: 2026-06-05T08:18:11.422Z
+- Leg 1
+  - Trade 1
+    - Trade ID: bac549dc-a03f-43a5-ab56-b977af2e0c1d
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-05T08:31:46.808Z - Saved Trade
+- Record ID: 7ed2c02b-07cf-4819-ba5b-3adcf8116179
+- Trade Date: 2021-01-21
+- Expiry: 2021-01-21
+- Track Strike: 14700
+- Created At: 2026-06-05T08:31:46.800Z
+- Updated At: 2026-06-05T08:31:46.800Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 15d7cb5e-ee53-41a6-8748-b99540d4c2a0
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
+### 2026-06-05T08:33:28.522Z - Saved Trade
+- Record ID: 99fd5154-1adc-401c-a1b7-456d983f115e
+- Trade Date: 2021-01-28
+- Expiry: 2021-01-28
+- Track Strike: 13800
+- Created At: 2026-06-05T08:33:28.519Z
+- Updated At: 2026-06-05T08:33:28.519Z
+- Leg 1
+  - Trade 1
+    - Trade ID: 9b27607c-2a27-450b-ac97-4e6000885036
+    - Option: CE
+    - Trade Strike: -
+    - Quantity: 75
+    - Entry Reason: -
+    - Exit Reason: -
+    - Entry Time: -
+    - Entry Price: -
+    - Exit Time: -
+    - Exit Price: -
+    - PL: -
+
