@@ -333,6 +333,16 @@ function FilterIcon() {
   );
 }
 
+function CalendarChevronIcon({ direction }: { direction: 'left' | 'right' | 'down' }) {
+  const rotation = direction === 'left' ? 180 : direction === 'down' ? 90 : 0;
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" style={{ transform: `rotate(${rotation}deg)` }}>
+      <path d="m9 6 6 6-6 6" />
+    </svg>
+  );
+}
+
 const TIME_DATALIST_ID = 'trade-time-options';
 const EOD_EXIT_TIME = '15:30';
 const TIME_OPTIONS = Array.from({ length: ((15 * 60 + 30) - (9 * 60 + 18)) / 3 + 1 }, (_, index) => {
@@ -509,7 +519,20 @@ function formatSelectedDateDisplay(dateKey: string) {
   })
     .format(parsed)
     .replace(/\s+/g, '-');
-  return `${weekday}, ${formattedDate}`;
+  return `${weekday}\n${formattedDate}`;
+}
+
+function formatModalDateDisplay(dateKey: string) {
+  if (!dateKey) return '';
+  const parsed = parseCalendarDate(dateKey);
+  if (!parsed) return dateKey;
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit',
+  })
+    .format(parsed)
+    .replace(/\s+/g, '-');
 }
 
 function getTodayDateKey() {
@@ -1093,6 +1116,19 @@ function TradeModal({
   const todayDateKey = getTodayDateKey();
   const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
 
+  useEffect(() => {
+    if (!selectedTradeDateOption || selectedTradeDateOption.strike === null || !draft.trade_date) return;
+    if (draft.track_strike.trim()) return;
+
+    onUpdateDraft((current) => {
+      if (current.trade_date !== draft.trade_date || current.track_strike.trim()) return current;
+      return {
+        ...current,
+        track_strike: String(selectedTradeDateOption.strike),
+      };
+    });
+  }, [draft.trade_date, draft.track_strike, onUpdateDraft, selectedTradeDateOption]);
+
   function updateTradeWithOptionalRule(
     legIndex: number,
     tradeIndex: number,
@@ -1194,7 +1230,7 @@ function TradeModal({
                         disabled={calendarView === 'dates' && !canGoToPreviousTradeMonth}
                         aria-label={calendarView === 'months' ? 'Previous year' : 'Previous month'}
                       >
-                        ‹
+                        <CalendarChevronIcon direction="left" />
                       </button>
                       <button
                         type="button"
@@ -1209,7 +1245,7 @@ function TradeModal({
                         disabled={calendarView === 'dates' && !canGoToNextTradeMonth}
                         aria-label={calendarView === 'months' ? 'Next year' : 'Next month'}
                       >
-                        ›
+                        <CalendarChevronIcon direction="right" />
                       </button>
                       <button
                         type="button"
@@ -1240,11 +1276,11 @@ function TradeModal({
                       <div className="trade-date-year-selector">
                         <div className="trade-date-year-nav">
                           <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(-1)} aria-label="Previous year">
-                            â€¹
+                            <CalendarChevronIcon direction="left" />
                           </button>
                           <strong>{visibleTradeYear}</strong>
                           <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(1)} aria-label="Next year">
-                            â€º
+                            <CalendarChevronIcon direction="right" />
                           </button>
                         </div>
                         <div className="trade-date-year-grid">
@@ -1264,11 +1300,11 @@ function TradeModal({
                       <div className="trade-date-month-selector">
                         <div className="trade-date-year-nav">
                           <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(-1)} aria-label="Previous year">
-                            ‹
+                            <CalendarChevronIcon direction="left" />
                           </button>
                           <strong>{visibleTradeYear}</strong>
                           <button type="button" className="button secondary trade-date-icon-button" onClick={() => moveCalendarYear(1)} aria-label="Next year">
-                            ›
+                            <CalendarChevronIcon direction="right" />
                           </button>
                         </div>
                         <div className="trade-date-month-grid">
@@ -1294,7 +1330,7 @@ function TradeModal({
                       <div className="trade-date-calendar-view">
                         <button type="button" className="trade-date-month-heading" onClick={() => setCalendarView('months')}>
                           <span>{visibleTradeMonth?.label ?? 'Trade Date Calendar'}</span>
-                          <span aria-hidden="true">▼</span>
+                          <CalendarChevronIcon direction="down" />
                         </button>
                         <div className="trade-date-weekdays">
                           {CALENDAR_WEEKDAY_NAMES.map((weekday) => (
@@ -1361,7 +1397,7 @@ function TradeModal({
                     <span>Expiry Date</span>
                     <input
                       className="trade-theme-control"
-                      value={selectedTradeDateOption?.expiry ?? ''}
+                      value={selectedTradeDateOption?.expiry ? formatModalDateDisplay(selectedTradeDateOption.expiry) : ''}
                       readOnly
                       placeholder="Derived from trade date"
                     />
@@ -1381,7 +1417,7 @@ function TradeModal({
                       className="trade-theme-control"
                       type="number"
                       step="0.05"
-                      placeholder="Enter strike"
+                      placeholder={selectedTradeDateOption?.strike === null ? 'ATM unavailable' : 'Enter strike'}
                       value={draft.track_strike}
                       disabled={isExitStage || !draft.trade_date}
                       onChange={(event) => onUpdateDraft((current) => ({ ...current, track_strike: event.target.value }))}
@@ -1391,14 +1427,14 @@ function TradeModal({
                     <span>GAP Status</span>
                     <div className="trade-gap-field-row">
                       <div
-                        className={`trade-theme-control trade-gap-status-display trade-status-control${selectedTradeDateOption?.gapStatus ? ` status-${toStatusClass(selectedTradeDateOption.gapStatus)}` : ''}`}
-                        aria-label="GAP status derived from the selected trade date"
-                      >
-                        {selectedTradeDateOption?.gapStatus ?? ''}
+                      className={`trade-theme-control trade-gap-status-display trade-status-control${selectedTradeDateOption?.gapStatus ? ` status-${toStatusClass(selectedTradeDateOption.gapStatus)}` : ''}`}
+                      aria-label="GAP status derived from the selected trade date"
+                    >
+                        {selectedTradeDateOption?.gapStatus ?? '—'}
                       </div>
                       {selectedTradeDateOption?.gapStatus && selectedTradeDateOption.gapStatus !== 'No Gap' ? (
                         <div className="trade-theme-control trade-gap-value" aria-label="GAP value derived from the selected trade date">
-                          {selectedTradeDateOption.gapValue ?? ''}
+                          {selectedTradeDateOption.gapValue ?? '—'}
                         </div>
                       ) : null}
                     </div>
@@ -1409,7 +1445,7 @@ function TradeModal({
                       className={`trade-theme-control trade-status-control${selectedTradeDateOption?.emaStatus ? ` status-${toStatusClass(selectedTradeDateOption.emaStatus)}` : ''}`}
                       aria-label="EMA status derived from the selected trade date"
                     >
-                      {selectedTradeDateOption?.emaStatus ?? ''}
+                      {selectedTradeDateOption?.emaStatus ?? '—'}
                     </div>
                   </label>
                 </div>

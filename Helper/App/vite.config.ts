@@ -666,7 +666,7 @@ async function updateHistoricalDatabase(candles: ValidatedCandle[]): Promise<His
   if (candles.length === 0) {
     return {
       status: 'success',
-      dbPath: 'ideal_trades.ema_intraday_candles',
+      dbPath: 'public.candles',
       records: 0,
     };
   }
@@ -679,7 +679,7 @@ async function updateHistoricalDatabase(candles: ValidatedCandle[]): Promise<His
     const parsed = JSON.parse(stdout.trim()) as HistoricalDbBuildResult;
     return {
       ...parsed,
-      dbPath: parsed.dbPath ?? 'ideal_trades.ema_intraday_candles',
+      dbPath: parsed.dbPath ?? 'public.candles',
       records: parsed.records ?? parsed.recordsUpserted ?? parsed.database?.records ?? candles.length,
     };
   } catch (error) {
@@ -688,7 +688,7 @@ async function updateHistoricalDatabase(candles: ValidatedCandle[]): Promise<His
         const parsed = JSON.parse(error.stdout.trim()) as HistoricalDbBuildResult;
         return {
           ...parsed,
-          dbPath: parsed.dbPath ?? 'ideal_trades.ema_intraday_candles',
+          dbPath: parsed.dbPath ?? 'public.candles',
           records: parsed.records ?? parsed.recordsUpserted ?? parsed.database?.records ?? candles.length,
         };
       } catch {
@@ -825,7 +825,7 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             metadata,
             storage: {
               stateTable: 'ideal_trades.nifty_market_state',
-              candleTable: 'ideal_trades.ema_intraday_candles',
+              candleTable: 'public.candles',
             },
           });
           return;
@@ -904,12 +904,12 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
               metadata: currentMetadata,
               database: {
                 status: 'success',
-                dbPath: 'ideal_trades.ema_intraday_candles',
+                dbPath: 'public.candles',
                 records: currentMetadata.total_records,
               },
               storage: {
                 stateTable: 'ideal_trades.nifty_market_state',
-                candleTable: 'ideal_trades.ema_intraday_candles',
+                candleTable: 'public.candles',
               },
               apiResponseStatus: 'not_required',
               debug: {
@@ -996,12 +996,12 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
               metadata: currentMetadata,
               database: {
                 status: 'success',
-                dbPath: 'ideal_trades.ema_intraday_candles',
+                dbPath: 'public.candles',
                 records: currentMetadata.total_records,
               },
               storage: {
                 stateTable: 'ideal_trades.nifty_market_state',
-                candleTable: 'ideal_trades.ema_intraday_candles',
+                candleTable: 'public.candles',
               },
               apiResponseStatus: 'not_required',
               debug: {
@@ -1022,7 +1022,7 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
               metadata: effectiveMetadata ?? createHistoricalMetadata([]),
               storage: {
                 stateTable: 'ideal_trades.nifty_market_state',
-                candleTable: 'ideal_trades.ema_intraday_candles',
+                candleTable: 'public.candles',
               },
               debug: {
                 requestTime,
@@ -1055,7 +1055,7 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             database,
             storage: {
               stateTable: 'ideal_trades.nifty_market_state',
-              candleTable: 'ideal_trades.ema_intraday_candles',
+              candleTable: 'public.candles',
             },
             apiResponseStatus: 'success',
             endpoint: lastEndpoint,

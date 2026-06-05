@@ -1,56 +1,7 @@
 import type { KiteAuthState, KiteSessionStatusResponse, KiteTokenExchangeResponse } from './types';
 
-const KITE_AUTH_STORAGE_KEY = 'ideal-trades.ema-intraday.kite-auth';
 const DEFAULT_TOKEN_ENDPOINT = '/api/kite/session';
 export const DEFAULT_KITE_LOGIN_URL = 'https://kite.zerodha.com/connect/login?api_key=zz9755o0bpmqlz0u&v=3';
-
-function getStoredAuthStateFromCookie(): KiteAuthState | null {
-  const cookie = document.cookie
-    .split('; ')
-    .find((entry) => entry.startsWith(`${KITE_AUTH_STORAGE_KEY}=`));
-  if (!cookie) return null;
-
-  try {
-    return JSON.parse(decodeURIComponent(cookie.split('=')[1])) as KiteAuthState;
-  } catch {
-    return null;
-  }
-}
-
-function getStoredAuthState(): KiteAuthState | null {
-  let stored: string | null = null;
-
-  try {
-    stored = window.localStorage.getItem(KITE_AUTH_STORAGE_KEY);
-  } catch {
-    return getStoredAuthStateFromCookie();
-  }
-
-  if (!stored) return getStoredAuthStateFromCookie();
-
-  try {
-    return JSON.parse(stored) as KiteAuthState;
-  } catch {
-    try {
-      window.localStorage.removeItem(KITE_AUTH_STORAGE_KEY);
-    } catch {
-      // Ignore blocked localStorage cleanup.
-    }
-    return null;
-  }
-}
-
-function storeAuthState(authState: KiteAuthState) {
-  const serializedAuthState = JSON.stringify(authState);
-
-  try {
-    window.localStorage.setItem(KITE_AUTH_STORAGE_KEY, serializedAuthState);
-  } catch {
-    // Cookie fallback keeps the test token visible after refresh when localStorage is blocked.
-  }
-
-  document.cookie = `${KITE_AUTH_STORAGE_KEY}=${encodeURIComponent(serializedAuthState)}; path=/; SameSite=Lax`;
-}
 
 export class KiteConnectService {
   private authState: KiteAuthState = {
@@ -63,11 +14,6 @@ export class KiteConnectService {
     userName: null,
     userId: null,
   };
-
-  constructor() {
-    const storedAuthState = getStoredAuthState();
-    if (storedAuthState) this.authState = storedAuthState;
-  }
 
   getAuthState(): KiteAuthState {
     return this.authState;
@@ -109,7 +55,6 @@ export class KiteConnectService {
       userName: null,
       userId: null,
     };
-    storeAuthState(this.authState);
 
     return this.authState;
   }
@@ -144,7 +89,6 @@ export class KiteConnectService {
       userName: result.userName ?? null,
       userId: result.userId ?? null,
     };
-    storeAuthState(this.authState);
 
     return this.authState;
   }
@@ -182,7 +126,6 @@ export class KiteConnectService {
       userName: result.userName ?? this.authState.userName,
       userId: result.userId ?? this.authState.userId,
     };
-    storeAuthState(this.authState);
 
     return this.authState;
   }
@@ -194,7 +137,6 @@ export class KiteConnectService {
       status: 'error',
       message,
     };
-    storeAuthState(this.authState);
 
     return this.authState;
   }

@@ -41,6 +41,34 @@ export type KiteSessionStatusResponse = {
   message?: string;
 };
 
+export type NiftyMarketStateResponse = {
+  status: 'success' | 'error';
+  stateKey?: string;
+  symbol?: string;
+  instrumentToken?: number;
+  timeframe?: string;
+  interval?: string;
+  firstCandle?: string;
+  lastCandle?: string;
+  latestCandleTimestamp?: string | null;
+  latestOpen?: number | null;
+  latestHigh?: number | null;
+  latestLow?: number | null;
+  latestClose?: number | null;
+  latestVolume?: number | null;
+  latestAtm?: number | null;
+  latestEma1000?: number | null;
+  latestEmaInteraction?: string | null;
+  latestGapValue?: number | null;
+  latestGapPercent?: number | null;
+  latestGapStatus?: string | null;
+  latestNearEma?: number | null;
+  totalRecords?: number;
+  lastUpdate?: string | null;
+  source?: string | null;
+  message?: string;
+};
+
 export type ManualHistoricalDownloadCandle = {
   timestamp: string;
   open: number;
@@ -76,13 +104,15 @@ export type ManualHistoricalDownloadResponse = {
   };
   database?: {
     status: 'success' | 'error';
-    dbPath?: string;
     records?: number;
     message?: string;
   };
-  storage?: {
-    databasePath?: string;
-    metadataPath: string;
+  state?: NiftyMarketStateResponse;
+  supabase?: {
+    stateKey?: string;
+    candleTable?: string;
+    stateTable?: string;
+    sessionTable?: string;
   };
   endpoint?: string;
   chunksDownloaded?: number;

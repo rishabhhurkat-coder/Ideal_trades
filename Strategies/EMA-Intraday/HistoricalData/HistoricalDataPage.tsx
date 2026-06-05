@@ -1,6 +1,8 @@
 ﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { DEFAULT_KITE_LOGIN_URL, KiteConnectService } from './KiteConnectService';
-import type { KiteAuthState, ManualHistoricalDownloadResponse } from './types';
+import type { KiteAuthState, ManualHistoricalDownloadResponse, NiftyMarketStateResponse } from './types';
+import { readNiftyMarketState } from '../../../Helper/Supabase/emaIntradayHistorical';
+import { supabase } from '../../../Helper/Supabase/supabaseClient';
 
 type DownloadStatus =
   | 'idle'
@@ -73,8 +75,9 @@ export function HistoricalDataPage() {
   const [authState, setAuthState] = useState<KiteAuthState>(() => kiteConnectService.getAuthState());
   const [requestTokenInput, setRequestTokenInput] = useState(() => kiteConnectService.getAuthState().requestToken ?? '');
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>('idle');
-  const [downloadMessage, setDownloadMessage] = useState('Ready to update local NIFTY 50 3 Minute history.');
+  const [downloadMessage, setDownloadMessage] = useState('Ready to update Supabase NIFTY 50 3 Minute history.');
   const [downloadResult, setDownloadResult] = useState<ManualHistoricalDownloadResponse | null>(null);
+  const [marketState, setMarketState] = useState<NiftyMarketStateResponse | null>(null);
   const [pendingDownloadAfterAuth, setPendingDownloadAfterAuth] = useState(false);
   const [updateOptionsMessage, setUpdateOptionsMessage] = useState('');
   const loginWindowRef = useRef<Window | null>(null);
@@ -86,21 +89,17 @@ export function HistoricalDataPage() {
     downloadStatus === 'saving';
   const needsRequestToken = downloadStatus === 'login_required' || pendingDownloadAfterAuth;
   const metadata = downloadResult?.metadata;
-  const dataAvailableUpTo = formatAvailableUpTo(metadata?.last_candle);
+  const dataAvailableUpTo = formatAvailableUpTo(marketState?.lastCandle ?? metadata?.last_candle);
   const cashDataSynced = dataAvailableUpTo;
   const authStatusLabel = authState.connected ? 'Connected' : authState.requestToken ? 'Token Ready' : 'Not Connected';
 
   useEffect(() => {
-    void fetch('/api/kite/historical-candles', {
-      method: 'GET',
-      credentials: 'include',
-    })
-      .then(async (response) => {
-        const result = (await response.json()) as ManualHistoricalDownloadResponse;
-        if (response.ok && result.status === 'success') setDownloadResult(result);
+    void readNiftyMarketState(supabase)
+      .then((result) => {
+        if (result.status === 'success') setMarketState(result);
       })
       .catch(() => {
-        // Local metadata is optional before the first download.
+        // Supabase state is optional before the first download.
       });
 
     void kiteConnectService
@@ -147,8 +146,9 @@ export function HistoricalDataPage() {
     }
 
     setDownloadStatus('saving');
-    setDownloadMessage('Writing historical candles directly to SQLite...');
+    setDownloadMessage('Writing historical candles directly to Supabase...');
     setDownloadResult(result);
+    if (result.state) setMarketState(result.state);
     setDownloadStatus('completed');
     setDownloadMessage('Completed.');
     return true;
@@ -301,7 +301,7 @@ export function HistoricalDataPage() {
         </div>
       </div>
 
-      {downloadStatus !== 'idle' || downloadMessage !== 'Ready to update local NIFTY 50 3 Minute history.' ? (
+      {downloadStatus !== 'idle' || downloadMessage !== 'Ready to update Supabase NIFTY 50 3 Minute history.' ? (
         <div className="alert">{downloadMessage}</div>
       ) : null}
       {updateOptionsMessage ? <div className="alert">{updateOptionsMessage}</div> : null}

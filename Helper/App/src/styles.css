@@ -2008,7 +2008,7 @@ input {
 
 .trade-selected-date-value {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 48px;
   border: 1px solid #ded8cd;
@@ -2018,6 +2018,13 @@ input {
   background: linear-gradient(180deg, #ffffff 0%, #f7f2e9 100%);
 }
 
+.trade-selected-date-value strong {
+  display: block;
+  white-space: pre-line;
+  line-height: 1.15;
+  padding-top: 4px;
+}
+
 .trade-selected-date-value svg {
   width: 16px;
   height: 16px;
@@ -2025,6 +2032,8 @@ input {
 }
 
 .trade-selected-date-value strong {
+  white-space: pre-line;
+  line-height: 1.2;
   font-size: 12px;
 }
 
