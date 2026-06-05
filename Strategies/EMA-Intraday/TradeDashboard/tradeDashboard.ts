@@ -1,3 +1,6 @@
+import { readTradeCalendar as readSupabaseTradeCalendar } from '../../../Helper/Supabase/emaIntradayHistorical';
+import { supabase } from '../../../Helper/Supabase/supabaseClient';
+
 export type TradeOption = 'CE' | 'PE';
 
 export type TradeEntryRecord = {
@@ -37,36 +40,12 @@ export type TradeLegDraft = {
   trades: TradeEntryDraft[];
 };
 
-export type TradeContext = {
-  status: 'success' | 'error';
-  tradeDate?: string;
-  atmStrike?: number;
-  expiry?: string;
-  dte?: number;
-  effDte?: number;
-  atmSourceDate?: string | null;
-  expirySourceDate?: string | null;
-  message?: string;
-};
-
-export type TradeCalendarExpiryOption = {
-  expiry: string;
-  firstDate: string;
-  lastDate: string;
-  eligibleDates: number;
-};
-
 export type TradeCalendarDateOption = {
   date: string;
-  expiryDate: string;
-  dte: number;
-  effDte: number;
 };
 
 export type TradeCalendarResponse = {
   status: 'success' | 'error';
-  expiry?: string;
-  expiries?: TradeCalendarExpiryOption[];
   dates?: TradeCalendarDateOption[];
   message?: string;
 };
@@ -456,33 +435,9 @@ export async function deleteTradeEntry(recordId: string, tradeId: string) {
   await readTradeDashboardResponse(response);
 }
 
-export async function fetchTradeContext(tradeDate: string): Promise<TradeContext> {
-  const response = await fetch(`/api/ema-intraday/trade-context?date=${encodeURIComponent(tradeDate)}`, {
-    method: 'GET',
-    credentials: 'include',
-  });
-  const result = (await response.json()) as TradeContext;
-
-  if (!response.ok || result.status !== 'success') {
-    throw new Error(result.message ?? 'Unable to load trade context.');
-  }
-
-  return result;
-}
-
-export async function fetchTradeCalendar(expiry?: string): Promise<TradeCalendarResponse> {
-  const url = new URL('/api/ema-intraday/trade-calendar', window.location.origin);
-  if (expiry) {
-    url.searchParams.set('expiry', expiry);
-  }
-
-  const response = await fetch(url, {
-    method: 'GET',
-    credentials: 'include',
-  });
-  const result = (await response.json()) as TradeCalendarResponse;
-
-  if (!response.ok || result.status !== 'success') {
+export async function fetchTradeCalendar(): Promise<TradeCalendarResponse> {
+  const result = await readSupabaseTradeCalendar(supabase);
+  if (result.status !== 'success') {
     throw new Error(result.message ?? 'Unable to load trade calendar.');
   }
 

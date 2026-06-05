@@ -7,12 +7,10 @@ import {
   emptyTradeEntry,
   emptyTradeLeg,
   fetchTradeCalendar,
-  fetchTradeContext,
   loadTradeRecords,
   rememberTradeQuantity,
   saveTradeRecord,
   type TradeCalendarDateOption,
-  type TradeCalendarExpiryOption,
   type TradeEntryDraft,
   type TradeEntryRecord,
   type TradeLegDraft,
@@ -460,19 +458,6 @@ function isEodExitReason(reason: string) {
   return reason.trim() === 'EOD';
 }
 
-function formatExpiryDisplay(expiry: string) {
-  if (!expiry) return '-';
-  const parsed = new Date(`${expiry}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return expiry;
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: '2-digit',
-  })
-    .format(parsed)
-    .replace(/\s+/g, '-');
-}
-
 function formatCalendarDay(date: Date) {
   return String(date.getDate());
 }
@@ -517,7 +502,14 @@ function formatSelectedDateDisplay(dateKey: string) {
   const weekday = new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
   }).format(parsed);
-  return `${weekday}, ${formatExpiryDisplay(dateKey).replace(/-(\d{2})$/, '-20$1')}`;
+  const formattedDate = new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit',
+  })
+    .format(parsed)
+    .replace(/\s+/g, '-');
+  return `${weekday}, ${formattedDate}`;
 }
 
 function getTodayDateKey() {
@@ -617,20 +609,10 @@ function buildTradeDateCalendar(tradeDates: TradeCalendarDateOption[]) {
   return months;
 }
 
-function formatDteLabel(dte: number) {
-  return `DTE ${dte}`;
-}
-
-function formatDteValue(dte: number | null) {
-  return dte === null ? '' : String(dte);
-}
-
-function formatEffDteValue(effDte: number | null) {
-  return effDte === null ? '' : String(effDte);
-}
+ 
 
 function formatTradeCalendarOption(option: TradeCalendarDateOption) {
-  return `${formatExpiryDisplay(option.date)} • Exp ${formatExpiryDisplay(option.expiryDate)} • DTE ${option.dte} • Eff ${option.effDte}`;
+  return formatSelectedDateDisplay(option.date);
 }
 
 function findMatchingTransitionRule(trade: TradeEntryDraft, rules: TradeTransitionRule[]) {
@@ -1018,7 +1000,6 @@ function TradeModal({
   selectedTradeId,
   entryReasons,
   exitReasons,
-  expiryOptions,
   tradeDates,
   loadingCalendar,
   transitionRules,
@@ -1037,7 +1018,6 @@ function TradeModal({
   selectedTradeId: string | null;
   entryReasons: EntryReason[];
   exitReasons: ExitReason[];
-  expiryOptions: TradeCalendarExpiryOption[];
   tradeDates: TradeCalendarDateOption[];
   loadingCalendar: boolean;
   transitionRules: TradeTransitionRule[];
@@ -1106,8 +1086,6 @@ function TradeModal({
       draft.gap_status.trim() &&
       draft.ema_status.trim(),
   );
-  const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
-  const selectedTradeDateExpiry = selectedTradeDateOption?.expiryDate || draft.expiry || '';
   const visibleTradeMonth = tradeCalendarMonths[visibleTradeMonthIndex] ?? tradeCalendarMonths[0] ?? null;
   const canGoToPreviousTradeMonth = visibleTradeMonthIndex > 0;
   const canGoToNextTradeMonth = visibleTradeMonthIndex < tradeCalendarMonths.length - 1;
@@ -1375,18 +1353,6 @@ function TradeModal({
                       <ExpiryHeaderIcon />
                       <strong>{formatSelectedDateDisplay(draft.trade_date)}</strong>
                     </div>
-                  </label>
-                  <label className="trade-setup-field">
-                    <span>Expiry Date</span>
-                    <input
-                      className="trade-theme-control"
-                      value={selectedTradeDateExpiry ? formatExpiryDisplay(selectedTradeDateExpiry) : 'Derived from trade date'}
-                      readOnly
-                    />
-                  </label>
-                  <label className="trade-setup-field">
-                    <span>DTE</span>
-                    <input className="trade-theme-control" value={formatDteValue(selectedTradeDateOption?.dte ?? null)} readOnly placeholder="Derived from trade date" />
                   </label>
                   <label className="trade-setup-field">
                     <span>Strike</span>
@@ -2032,9 +1998,7 @@ function TradeDetailModalLight({
 export function TradeDashboardPage() {
   const [records, setRecords] = useState<TradeRecord[]>([]);
   const [entryReasons, setEntryReasons] = useState<EntryReason[]>([]);
-  const [exitReasons, setExitReasons] = useState<ExitReason[]>([]);
-  const [expiryOptions, setExpiryOptions] = useState<TradeCalendarExpiryOption[]>([]);
-  const [tradeDates, setTradeDates] = useState<TradeCalendarDateOption[]>([]);
+  const [exitReasons, setExitReasons] = useState<ExitReason[]>([]);  const [tradeDates, setTradeDates] = useState<TradeCalendarDateOption[]>([]);
   const [transitionRules, setTransitionRules] = useState<TradeTransitionRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
@@ -2072,26 +2036,21 @@ export function TradeDashboardPage() {
     };
   }, []);
 
-  useEffect(() => {
-    void Promise.all([fetchEntryReasons(), fetchExitReasons(), fetchTradeTransitionRules(), fetchTradeCalendar()])
-      .then(([entryRows, exitRows, transitionRows, calendar]) => {
+  useEffect(() => {    void Promise.all([fetchEntryReasons(), fetchExitReasons(), fetchTradeTransitionRules()])
+      .then(([entryRows, exitRows, transitionRows]) => {
         setEntryReasons(entryRows.filter((reason) => reason.is_active));
         setExitReasons(exitRows.filter((reason) => reason.is_active));
         setTransitionRules(transitionRows.filter((rule) => rule.is_active));
-        setExpiryOptions(calendar.expiries ?? []);
       })
       .catch(() => {
         setEntryReasons([]);
         setExitReasons([]);
         setTransitionRules([]);
-        setExpiryOptions([]);
       });
   }, []);
 
-  useEffect(() => {
-    if (!open) {
+  useEffect(() => {    if (!open) {
       setTradeDates([]);
-      setExpiryOptions([]);
       setLoadingCalendar(false);
       return;
     }
@@ -2099,29 +2058,14 @@ export function TradeDashboardPage() {
     let active = true;
     setLoadingCalendar(true);
 
-    const timer = window.setTimeout(() => {
-      void fetchTradeCalendar()
+    const timer = window.setTimeout(() => {      void fetchTradeCalendar()
         .then((calendar) => {
           if (!active) return;
-          setExpiryOptions(calendar.expiries ?? []);
-          const nextDates = calendar.dates ?? [];
-          setTradeDates(nextDates);
-
-          setDraft((current) => {
-            if (!current.trade_date) return current;
-            const selected = nextDates.find((option) => option.date === current.trade_date);
-            return selected
-              ? {
-                  ...current,
-                  expiry: selected.expiryDate || current.expiry,
-                }
-              : { ...current, trade_date: '', expiry: '', track_strike: '' };
-          });
+          setTradeDates(calendar.dates ?? []);
         })
         .catch(() => {
           if (!active) return;
           setTradeDates([]);
-          setExpiryOptions([]);
         })
         .finally(() => {
           if (active) setLoadingCalendar(false);
@@ -2132,31 +2076,7 @@ export function TradeDashboardPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !draft.trade_date) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void fetchTradeContext(draft.trade_date)
-        .then((context) => {
-          setDraft((current) => ({
-            ...current,
-            track_strike: context.atmStrike?.toString() ?? '',
-          }));
-        })
-        .catch(() => {
-          setDraft((current) => ({ ...current, track_strike: '' }));
-        });
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [draft.trade_date, draft.expiry, open]);
-
+  }, [open]);
   const tradeRows = useMemo(() => flattenTradeRows(records), [records]);
   const dashboardRows = useMemo(() => buildDashboardRows(tradeRows), [tradeRows]);
   const [activePreset, setActivePreset] = useState<DashboardPreset>('all');
@@ -2613,7 +2533,6 @@ export function TradeDashboardPage() {
         selectedTradeId={selectedTradeId}
         entryReasons={entryReasons}
         exitReasons={exitReasons}
-        expiryOptions={expiryOptions}
         tradeDates={tradeDates}
       loadingCalendar={loadingCalendar}
       transitionRules={transitionRules}
