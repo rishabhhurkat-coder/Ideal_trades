@@ -24,6 +24,7 @@ export type TradeCalendarDateOption = {
   expiry: string;
   dte: number | null;
   strike: number | null;
+  gapValue: number | null;
   gapStatus: string | null;
   emaStatus: string | null;
 };
@@ -158,7 +159,7 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
       .order('dte', { ascending: true }),
     marketCandlesClient
       .from('nifty_market_candles')
-      .select('trade_date,trade_time,atm,gap_status,near_ema')
+      .select('trade_date,trade_time,atm,gap_value,gap_status,near_ema')
       .order('trade_date', { ascending: true })
       .order('trade_time', { ascending: false }),
   ]);
@@ -188,6 +189,7 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     ? (marketResult.data as Array<{
         trade_date?: string;
         atm?: number | null;
+        gap_value?: number | null;
         gap_status?: string | null;
         near_ema?: number | null;
       }>)
@@ -203,6 +205,7 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     string,
     {
       strike: number | null;
+      gapValue: number | null;
       gapStatus: string | null;
       emaStatus: string | null;
     }
@@ -213,6 +216,7 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     const nearEma = typeof row.near_ema === 'number' ? row.near_ema : row.near_ema === null ? null : Number(row.near_ema);
     marketByDate.set(date, {
       strike: typeof row.atm === 'number' ? row.atm : row.atm === null ? null : Number(row.atm),
+      gapValue: typeof row.gap_value === 'number' ? row.gap_value : row.gap_value === null ? null : Number(row.gap_value),
       gapStatus: row.gap_status === 'Flat' ? 'No Gap' : row.gap_status ?? null,
       emaStatus: nearEma === null ? null : 'Near EMA',
     });
@@ -230,6 +234,7 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
       expiry,
       dte: expiryByDate.get(date) ?? null,
       strike: market?.strike ?? null,
+      gapValue: market?.gapValue ?? null,
       gapStatus: market?.gapStatus ?? null,
       emaStatus: market?.emaStatus ?? null,
     });

@@ -1730,6 +1730,18 @@ input {
   text-transform: uppercase;
 }
 
+.trade-gap-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+  align-items: center;
+}
+
+.trade-gap-value {
+  padding-right: 11px;
+  text-align: center;
+}
+
 .trade-date-layout {
   display: grid;
   grid-template-columns: 335px 190px;

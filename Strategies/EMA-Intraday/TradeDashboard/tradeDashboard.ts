@@ -45,6 +45,7 @@ export type TradeCalendarDateOption = {
   expiry: string;
   dte: number | null;
   strike: number | null;
+  gapValue: number | null;
   gapStatus: string | null;
   emaStatus: string | null;
 };

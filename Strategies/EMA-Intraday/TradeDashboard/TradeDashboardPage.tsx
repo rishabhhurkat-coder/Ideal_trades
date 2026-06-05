@@ -1391,16 +1391,24 @@ function TradeModal({
                   </label>
                   <label className="trade-setup-field">
                     <span>GAP Status</span>
-                    <select
-                      className={`trade-theme-control trade-status-control${draft.gap_status ? ` status-${toStatusClass(draft.gap_status)}` : ''}`}
-                      value={draft.gap_status}
-                      onChange={(event) => onUpdateDraft((current) => ({ ...current, gap_status: event.target.value }))}
-                    >
-                      <option value="">Select gap status</option>
-                      {GAP_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
+                    <div className="trade-gap-field-row">
+                      <select
+                        className={`trade-theme-control trade-status-control${draft.gap_status ? ` status-${toStatusClass(draft.gap_status)}` : ''}`}
+                        value={draft.gap_status}
+                        onChange={(event) => onUpdateDraft((current) => ({ ...current, gap_status: event.target.value }))}
+                      >
+                        <option value="">Select gap status</option>
+                        {GAP_STATUS_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                      <input
+                        className="trade-theme-control trade-gap-value"
+                        value={selectedTradeDateOption?.gapValue ?? ''}
+                        readOnly
+                        placeholder="GAP"
+                      />
+                    </div>
                   </label>
                   <label className="trade-setup-field">
                     <span>EMA Status</span>
