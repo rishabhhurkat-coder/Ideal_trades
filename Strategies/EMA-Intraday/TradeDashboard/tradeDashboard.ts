@@ -89,11 +89,6 @@ function uuid() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function isValidQuantity(value: string) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0;
-}
-
 export function getRememberedTradeQuantity() {
   return DEFAULT_TRADE_QUANTITY;
 }

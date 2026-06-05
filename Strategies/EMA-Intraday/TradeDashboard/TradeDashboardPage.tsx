@@ -548,8 +548,6 @@ type TradeDateCalendarMonth = {
 
 const CALENDAR_WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const CALENDAR_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const GAP_STATUS_OPTIONS = ['Gap Up', 'Gap Down', 'No Gap'];
-const EMA_STATUS_OPTIONS = ['Far EMA', 'Near EMA'];
 
 function toStatusClass(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -2252,10 +2250,6 @@ export function TradeDashboardPage() {
       ...current,
       [column]: values,
     }));
-  }
-
-  function getActiveColumnSelection(column: DashboardColumnKey) {
-    return appliedColumnFilters[column].length > 0 ? appliedColumnFilters[column] : allColumnValues[column];
   }
 
   async function refreshRecords() {

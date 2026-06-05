@@ -3,18 +3,15 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createClient } from '@supabase/supabase-js';
 import { dirname } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
+import ws from 'file:///C:/Users/Dell/Matalia_Accounting_Engine/RRH_Project_Files/Application/node_modules/ws/wrapper.mjs';
 
 const appRoot = fileURLToPath(new URL('.', import.meta.url));
 const kiteSessionPath = fileURLToPath(new URL('./.kite-session.json', import.meta.url));
 const externalKiteTokenPath = 'G:\\My Drive\\H&L\\Individual Trades Codes - Copy\\Data Files\\token.json';
-const historicalDataDir = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/Data/', import.meta.url));
-const historicalDbBuilderPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/build_historical_db.py', import.meta.url));
-const tradeContextScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/get_trade_context.py', import.meta.url));
-const tradeCalendarScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/get_trade_calendar.py', import.meta.url));
-const historicalDbPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db', import.meta.url));
-const historicalMetadataPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/Data/metadata.json', import.meta.url));
+const historicalSyncScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/sync_kite_candles_to_supabase.py', import.meta.url));
 const tradeLogPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/TradeDashboard/trade-log.md', import.meta.url));
 const historicalStartDate = '2021-01-01';
 const niftyInstrumentToken = 256265;
@@ -23,6 +20,12 @@ const historicalSymbol = 'NIFTY 50';
 const historicalTimeframeLabel = '3 Minute';
 const historicalChunkDays = 60;
 const defaultKiteApiKey = 'zz9755o0bpmqlz0u';
+const defaultRuntimeUserEmail = 'ideal-trades@local.dev';
+const defaultRuntimeUserId = '5f2e4d5f-0f72-4bbd-99bb-49d1c4d2d3a1';
+const defaultRuntimeUserName = 'Ideal Trades';
+const emaIntradayStrategyName = 'EMA Intraday';
+const historicalStateKey = 'NIFTY_50_3MIN';
+const tradeDashboardEndpoint = '/api/ema-intraday/trade-dashboard';
 const pythonCommand = process.env.IDEAL_TRADES_PYTHON || 'python';
 
 type KiteSession = {
@@ -107,6 +110,19 @@ type HistoricalDbBuildResult = {
   dbPath?: string;
   records?: number;
   message?: string;
+  metadata?: HistoricalMetadata;
+  state?: NiftyMarketStateRow;
+  supabase?: {
+    stateKey?: string;
+    candleTable?: string;
+    stateTable?: string;
+  };
+  recordsUpserted?: number;
+  database?: {
+    status: 'success' | 'error';
+    records?: number;
+    message?: string;
+  };
 };
 
 type HistoricalDbSnapshot = {
@@ -118,42 +134,14 @@ type HistoricalDbSnapshot = {
   message?: string;
 };
 
-type TradeContextResponse = {
-  status: 'success' | 'error';
-  tradeDate?: string;
-  atmStrike?: number;
-  expiry?: string;
-  atmSourceDate?: string | null;
-  expirySourceDate?: string | null;
-  message?: string;
-};
-
-type TradeCalendarExpiryOption = {
-  expiry: string;
-  firstDate: string;
-  lastDate: string;
-  eligibleDates: number;
-};
-
-type TradeCalendarDateOption = {
-  date: string;
-  dte: number;
-};
-
-type TradeCalendarResponse = {
-  status: 'success' | 'error';
-  expiry?: string;
-  expiries?: TradeCalendarExpiryOption[];
-  dates?: TradeCalendarDateOption[];
-  message?: string;
-};
-
 type TradeLogRequest = {
   record?: {
     id?: string;
     trade_date?: string;
     track_strike?: number | null;
     expiry?: string | null;
+    gap_status?: string;
+    ema_status?: string;
     created_at?: string;
     updated_at?: string;
     legs?: Array<{
@@ -174,6 +162,94 @@ type TradeLogRequest = {
     }>;
   };
   action?: 'create' | 'update';
+};
+
+type TradeDashboardRecordRow = {
+  id: string;
+  user_id: string;
+  strategy_id: string;
+  trade_date: string;
+  track_strike: number | null;
+  expiry: string | null;
+  status: string;
+  gap_status: string;
+  ema_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type TradeDashboardLegRow = {
+  id: string;
+  trade_id: string;
+  user_id: string;
+  leg_no: number;
+  option_side: 'CE' | 'PE';
+  trade_strike: number | null;
+  quantity: number | null;
+  entry_reason_id: string | null;
+  exit_reason_id: string | null;
+  entry_time: string | null;
+  exit_time: string | null;
+  entry_price: number | null;
+  exit_price: number | null;
+  pl: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type NiftyMarketCandleRow = {
+  symbol: string;
+  instrument_token: number;
+  timeframe: string;
+  interval: string;
+  trade_date: string;
+  trade_time: string;
+  candle_timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  atm: number | null;
+  ema_1000: number;
+  ema_interaction: string;
+  source: string;
+};
+
+type NiftyMarketStateRow = {
+  state_key: string;
+  symbol: string;
+  instrument_token: number;
+  timeframe: string;
+  interval: string;
+  first_candle: string | null;
+  last_candle: string | null;
+  latest_candle_timestamp: string | null;
+  latest_open: number | null;
+  latest_high: number | null;
+  latest_low: number | null;
+  latest_close: number | null;
+  latest_volume: number | null;
+  latest_atm: number | null;
+  latest_ema_1000: number | null;
+  latest_ema_interaction: string | null;
+  total_records: number;
+  last_update: string | null;
+  source: string;
+};
+
+type KiteSessionRow = {
+  session_key: string;
+  access_token: string;
+  public_token: string | null;
+  user_name: string | null;
+  user_id: string | null;
+  login_time: string | null;
+  profile_status: string | null;
+  profile_message: string | null;
+  last_verified_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 function getKiteLoginUrl(apiKey: string) {
@@ -418,10 +494,6 @@ function validateStoredCandle(candle: unknown): ValidatedCandle | null {
   };
 }
 
-async function ensureHistoricalDataDir() {
-  await mkdir(historicalDataDir, { recursive: true });
-}
-
 function createHistoricalMetadata(candles: ValidatedCandle[], lastUpdate = ''): HistoricalMetadata {
   const sortedCandles = [...candles].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
@@ -452,25 +524,6 @@ function updateHistoricalMetadata(
     total_records: (existingMetadata?.total_records ?? 0) + recordsAdded,
     last_update: new Date().toISOString(),
   };
-}
-
-async function readHistoricalMetadata(): Promise<HistoricalMetadata | null> {
-  try {
-    const parsed = JSON.parse(await readFile(historicalMetadataPath, 'utf-8')) as Partial<HistoricalMetadata>;
-    if (typeof parsed !== 'object' || parsed === null) return null;
-
-    return {
-      symbol: typeof parsed.symbol === 'string' ? parsed.symbol : historicalSymbol,
-      instrument_token: parsed.instrument_token === niftyInstrumentToken ? parsed.instrument_token : niftyInstrumentToken,
-      timeframe: typeof parsed.timeframe === 'string' ? parsed.timeframe : historicalInterval,
-      first_candle: typeof parsed.first_candle === 'string' ? parsed.first_candle : '',
-      last_candle: typeof parsed.last_candle === 'string' ? parsed.last_candle : '',
-      total_records: typeof parsed.total_records === 'number' ? parsed.total_records : 0,
-      last_update: typeof parsed.last_update === 'string' ? parsed.last_update : '',
-    };
-  } catch {
-    return null;
-  }
 }
 
 function addMinutesToKiteTimestamp(timestamp: string, minutes: number) {
@@ -526,26 +579,6 @@ function snapshotToHistoricalMetadata(snapshot: HistoricalDbSnapshot): Historica
   };
 }
 
-function buildSupabaseChildEnv(env: Record<string, string>) {
-  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || '';
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '';
-
-  return {
-    ...(supabaseUrl
-      ? {
-          SUPABASE_URL: supabaseUrl,
-          VITE_SUPABASE_URL: supabaseUrl,
-        }
-      : {}),
-    ...(supabaseAnonKey
-      ? {
-          SUPABASE_ANON_KEY: supabaseAnonKey,
-          VITE_SUPABASE_ANON_KEY: supabaseAnonKey,
-        }
-      : {}),
-  };
-}
-
 function runPythonJsonCommand(
   args: string[],
   input = '',
@@ -590,63 +623,41 @@ function runPythonJsonCommand(
   });
 }
 
-async function readHistoricalDatabaseSnapshot(): Promise<HistoricalDbSnapshot> {
-  try {
-    const { stdout } = await runPythonJsonCommand(['-3', historicalDbBuilderPath, historicalDataDir, '--summary']);
-    return JSON.parse(stdout.trim()) as HistoricalDbSnapshot;
-  } catch (error) {
-    if (error && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string' && error.stdout.trim()) {
-      try {
-        return JSON.parse(error.stdout.trim()) as HistoricalDbSnapshot;
-      } catch {
-        // Fall through to a normal error response.
-      }
-    }
-
+async function readHistoricalDatabaseSnapshot(supabaseClient: ReturnType<typeof createClient> | null): Promise<HistoricalDbSnapshot> {
+  if (!supabaseClient) {
     return {
       status: 'error',
-      message: error instanceof Error ? error.message : 'Failed to read the historical database.',
+      message: 'Supabase is not configured.',
     };
   }
-}
 
-async function readTradeContextForDate(tradeDate: string, supabaseEnv: Record<string, string> = {}): Promise<TradeContextResponse> {
   try {
-    const { stdout } = await runPythonJsonCommand(['-3', tradeContextScriptPath, tradeDate], '', supabaseEnv);
-    return JSON.parse(stdout.trim()) as TradeContextResponse;
-  } catch (error) {
-    if (error && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string' && error.stdout.trim()) {
-      try {
-        return JSON.parse(error.stdout.trim()) as TradeContextResponse;
-      } catch {
-        // Fall through to a normal error response.
-      }
+    const { data, error } = await supabaseClient
+      .schema('ideal_trades')
+      .from('nifty_market_state')
+      .select('first_candle,last_candle,total_records,last_update')
+      .eq('state_key', historicalStateKey)
+      .limit(1);
+
+    if (error) {
+      return {
+        status: 'error',
+        message: error.message ?? 'Failed to read the historical snapshot from Supabase.',
+      };
     }
 
+    const row = Array.isArray(data) ? (data[0] as Partial<NiftyMarketStateRow> | undefined) : undefined;
     return {
-      status: 'error',
-      message: error instanceof Error ? error.message : 'Failed to read trade context.',
+      status: 'success',
+      dbPath: 'ideal_trades.nifty_market_state',
+      records: row?.total_records ?? 0,
+      firstCandle: row?.first_candle ?? '',
+      lastCandle: row?.last_candle ?? '',
     };
-  }
-}
-
-async function readTradeCalendar(expiry: string | null, supabaseEnv: Record<string, string> = {}): Promise<TradeCalendarResponse> {
-  try {
-    const args = ['-3', tradeCalendarScriptPath];
-    if (expiry) {
-      args.push(expiry);
-    }
-
-    const { stdout } = await runPythonJsonCommand(args, '', supabaseEnv);
-    return JSON.parse(stdout.trim()) as TradeCalendarResponse;
   } catch (error) {
-    if (error instanceof Error && 'stdout' in error && typeof error.stdout === 'string' && error.stdout.trim()) {
-      return JSON.parse(error.stdout.trim()) as TradeCalendarResponse;
-    }
-
     return {
       status: 'error',
-      message: error instanceof Error ? error.message : 'Failed to read trade calendar.',
+      message: error instanceof Error ? error.message : 'Failed to read the historical snapshot from Supabase.',
     };
   }
 }
@@ -655,21 +666,31 @@ async function updateHistoricalDatabase(candles: ValidatedCandle[]): Promise<His
   if (candles.length === 0) {
     return {
       status: 'success',
-      dbPath: historicalDbPath,
+      dbPath: 'ideal_trades.ema_intraday_candles',
       records: 0,
     };
   }
 
   try {
     const { stdout } = await runPythonJsonCommand(
-      ['-3', historicalDbBuilderPath, historicalDataDir, '--append-candles', '-'],
+      ['-3', historicalSyncScriptPath],
       JSON.stringify(candles),
     );
-    return JSON.parse(stdout.trim()) as HistoricalDbBuildResult;
+    const parsed = JSON.parse(stdout.trim()) as HistoricalDbBuildResult;
+    return {
+      ...parsed,
+      dbPath: parsed.dbPath ?? 'ideal_trades.ema_intraday_candles',
+      records: parsed.records ?? parsed.recordsUpserted ?? parsed.database?.records ?? candles.length,
+    };
   } catch (error) {
     if (error && typeof error === 'object' && 'stdout' in error && typeof error.stdout === 'string' && error.stdout.trim()) {
       try {
-        return JSON.parse(error.stdout.trim()) as HistoricalDbBuildResult;
+        const parsed = JSON.parse(error.stdout.trim()) as HistoricalDbBuildResult;
+        return {
+          ...parsed,
+          dbPath: parsed.dbPath ?? 'ideal_trades.ema_intraday_candles',
+          records: parsed.records ?? parsed.recordsUpserted ?? parsed.database?.records ?? candles.length,
+        };
       } catch {
         // Fall through to a normal error response.
       }
@@ -738,42 +759,16 @@ function mergeCandles(existingCandles: ValidatedCandle[], downloadedCandles: Val
 function kiteSessionPlugin(env: Record<string, string>): Plugin {
   const apiKey = env.KITE_API_KEY || env.VITE_KITE_API_KEY || defaultKiteApiKey;
   const apiSecret = env.KITE_API_SECRET || env.VITE_KITE_API_SECRET;
-  const supabaseEnv = buildSupabaseChildEnv(env);
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || '';
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '';
+  const supabaseClient =
+    supabaseUrl && supabaseAnonKey
+      ? createClient(supabaseUrl, supabaseAnonKey, { realtime: { transport: ws } })
+      : null;
 
   return {
     name: 'kite-session-api',
     configureServer(server) {
-      server.middlewares.use('/api/ema-intraday/trade-context', async (request, response) => {
-        if (request.method !== 'GET') {
-          sendJson(response, 405, { status: 'error', message: 'Method not allowed.' });
-          return;
-        }
-
-        const requestUrl = new URL(request.url || '', 'http://localhost');
-        const tradeDate = requestUrl.searchParams.get('date')?.trim() || '';
-        if (!tradeDate) {
-          sendJson(response, 400, { status: 'error', message: 'Missing date.' });
-          return;
-        }
-
-        const result = await readTradeContextForDate(tradeDate, supabaseEnv);
-        const statusCode = result.status === 'success' ? 200 : 422;
-        sendJson(response, statusCode, result);
-      });
-
-      server.middlewares.use('/api/ema-intraday/trade-calendar', async (request, response) => {
-        if (request.method !== 'GET') {
-          sendJson(response, 405, { status: 'error', message: 'Method not allowed.' });
-          return;
-        }
-
-        const requestUrl = new URL(request.url || '', 'http://localhost');
-        const expiry = requestUrl.searchParams.get('expiry')?.trim() || null;
-        const result = await readTradeCalendar(expiry, supabaseEnv);
-        const statusCode = result.status === 'success' ? 200 : 422;
-        sendJson(response, statusCode, result);
-      });
-
       server.middlewares.use('/api/ema-intraday/trade-log', async (request, response) => {
         if (request.method !== 'POST') {
           sendJson(response, 405, { status: 'error', message: 'Method not allowed.' });
@@ -811,14 +806,11 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
 
       server.middlewares.use('/api/kite/historical-candles', async (request, response) => {
         if (request.method === 'GET') {
-          await ensureHistoricalDataDir();
-          const storedMetadata = await readHistoricalMetadata();
-          const storedSnapshot = storedMetadata ? null : await readHistoricalDatabaseSnapshot();
+          const storedSnapshot = await readHistoricalDatabaseSnapshot(supabaseClient);
           const metadata =
-            storedMetadata ??
-            (storedSnapshot?.status === 'success' && (storedSnapshot.records ?? 0) > 0
+            storedSnapshot.status === 'success' && (storedSnapshot.records ?? 0) > 0
               ? snapshotToHistoricalMetadata(storedSnapshot)
-              : createHistoricalMetadata([]));
+              : createHistoricalMetadata([]);
 
           sendJson(response, 200, {
             status: 'success',
@@ -832,8 +824,8 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             downloadStatus: 'Ready',
             metadata,
             storage: {
-              databasePath: historicalDbPath,
-              metadataPath: historicalMetadataPath,
+              stateTable: 'ideal_trades.nifty_market_state',
+              candleTable: 'ideal_trades.ema_intraday_candles',
             },
           });
           return;
@@ -877,14 +869,11 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             return;
           }
 
-          await ensureHistoricalDataDir();
-          const metadata = await readHistoricalMetadata();
-          const databaseSnapshot = metadata ? null : await readHistoricalDatabaseSnapshot();
+          const databaseSnapshot = await readHistoricalDatabaseSnapshot(supabaseClient);
           const effectiveMetadata =
-            metadata ??
-            (databaseSnapshot?.status === 'success' && (databaseSnapshot.records ?? 0) > 0
+            databaseSnapshot.status === 'success' && (databaseSnapshot.records ?? 0) > 0
               ? snapshotToHistoricalMetadata(databaseSnapshot)
-              : null);
+              : null;
           const downloadWindow = getDownloadWindow(effectiveMetadata);
 
           if (!downloadWindow.from) {
@@ -915,12 +904,12 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
               metadata: currentMetadata,
               database: {
                 status: 'success',
-                dbPath: historicalDbPath,
+                dbPath: 'ideal_trades.ema_intraday_candles',
                 records: currentMetadata.total_records,
               },
               storage: {
-                databasePath: historicalDbPath,
-                metadataPath: historicalMetadataPath,
+                stateTable: 'ideal_trades.nifty_market_state',
+                candleTable: 'ideal_trades.ema_intraday_candles',
               },
               apiResponseStatus: 'not_required',
               debug: {
@@ -1007,12 +996,12 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
               metadata: currentMetadata,
               database: {
                 status: 'success',
-                dbPath: historicalDbPath,
+                dbPath: 'ideal_trades.ema_intraday_candles',
                 records: currentMetadata.total_records,
               },
               storage: {
-                databasePath: historicalDbPath,
-                metadataPath: historicalMetadataPath,
+                stateTable: 'ideal_trades.nifty_market_state',
+                candleTable: 'ideal_trades.ema_intraday_candles',
               },
               apiResponseStatus: 'not_required',
               debug: {
@@ -1032,8 +1021,8 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
               message: database.message || 'Historical candles were downloaded, but database update failed.',
               metadata: effectiveMetadata ?? createHistoricalMetadata([]),
               storage: {
-                databasePath: historicalDbPath,
-                metadataPath: historicalMetadataPath,
+                stateTable: 'ideal_trades.nifty_market_state',
+                candleTable: 'ideal_trades.ema_intraday_candles',
               },
               debug: {
                 requestTime,
@@ -1045,12 +1034,9 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             return;
           }
 
-          const nextMetadata = updateHistoricalMetadata(
-            effectiveMetadata,
-            missingCandles,
-            database.records ?? missingCandles.length,
-          );
-          await writeFile(historicalMetadataPath, JSON.stringify(nextMetadata, null, 2), { encoding: 'utf-8' });
+          const nextMetadata =
+            database.metadata ??
+            updateHistoricalMetadata(effectiveMetadata, missingCandles, database.records ?? missingCandles.length);
 
           sendJson(response, 200, {
             status: 'success',
@@ -1068,8 +1054,8 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             metadata: nextMetadata,
             database,
             storage: {
-              databasePath: historicalDbPath,
-              metadataPath: historicalMetadataPath,
+              stateTable: 'ideal_trades.nifty_market_state',
+              candleTable: 'ideal_trades.ema_intraday_candles',
             },
             apiResponseStatus: 'success',
             endpoint: lastEndpoint,
