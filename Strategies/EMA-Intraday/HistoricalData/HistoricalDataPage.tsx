@@ -33,7 +33,7 @@ function formatAvailableUpTo(dateTime: string | null | undefined): string {
       return accumulator;
     }, {});
 
-  return `${parts.day}.${parts.month}.${parts.year} ${parts.hour}.${parts.minute}`;
+  return `${parts.day}-${parts.month}-${parts.year.slice(-2)} ${parts.hour}.${parts.minute}`;
 }
 
 function CashIcon() {
