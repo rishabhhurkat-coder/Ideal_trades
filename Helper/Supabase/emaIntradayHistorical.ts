@@ -21,6 +21,7 @@ export type TradeCalendarExpiryOption = {
 
 export type TradeCalendarDateOption = {
   date: string;
+  expiry: string;
 };
 
 export type TradeCalendarResponse = {
@@ -137,7 +138,11 @@ function formatDate(value: unknown) {
 
 export async function readTradeCalendar(client: IdealTradesClient): Promise<TradeCalendarResponse> {
   const universeClient = typeof client.schema === 'function' ? client.schema('emaintraday') : client;
-  const { data, error } = await universeClient.from('candidate_universe').select('trade_date').order('trade_date', { ascending: true });
+  const { data, error } = await universeClient
+    .from('candidate_universe')
+    .select('trade_date,expiry')
+    .order('trade_date', { ascending: true })
+    .order('expiry', { ascending: true });
 
   if (error) {
     return {
@@ -146,18 +151,20 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     };
   }
 
-  const rows = Array.isArray(data) ? (data as Array<{ trade_date?: string }>) : [];
-  const dates = Array.from(
-    new Set(
-      rows
-        .map((row) => formatDate(row.trade_date))
-        .filter((value): value is string => Boolean(value)),
-    ),
-  ).sort((left, right) => left.localeCompare(right));
+  const rows = Array.isArray(data) ? (data as Array<{ trade_date?: string; expiry?: string }>) : [];
+  const seen = new Set<string>();
+  const dates = rows.reduce<TradeCalendarDateOption[]>((accumulator, row) => {
+    const date = formatDate(row.trade_date);
+    const expiry = formatDate(row.expiry);
+    if (!date || !expiry || seen.has(date)) return accumulator;
+    seen.add(date);
+    accumulator.push({ date, expiry });
+    return accumulator;
+  }, []);
 
   return {
     status: 'success',
-    dates: dates.map((date) => ({ date })),
+    dates,
   };
 }
 

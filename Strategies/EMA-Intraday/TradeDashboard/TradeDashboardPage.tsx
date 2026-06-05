@@ -1093,6 +1093,7 @@ function TradeModal({
   const availableMonthKeys = new Set(tradeCalendarMonths.map((month) => month.monthKey));
   const availableTradeYears = Array.from(new Set(tradeCalendarMonths.map((month) => Number(month.monthKey.slice(0, 4))))).sort((left, right) => left - right);
   const todayDateKey = getTodayDateKey();
+  const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
 
   function updateTradeWithOptionalRule(
     legIndex: number,
@@ -1353,6 +1354,15 @@ function TradeModal({
                       <ExpiryHeaderIcon />
                       <strong>{formatSelectedDateDisplay(draft.trade_date)}</strong>
                     </div>
+                  </label>
+                  <label className="trade-setup-field">
+                    <span>Expiry Date</span>
+                    <input
+                      className="trade-theme-control"
+                      value={selectedTradeDateOption?.expiry ?? ''}
+                      readOnly
+                      placeholder="Derived from trade date"
+                    />
                   </label>
                   <label className="trade-setup-field">
                     <span>Strike</span>
