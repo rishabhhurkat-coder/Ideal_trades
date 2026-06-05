@@ -23,6 +23,9 @@ export type TradeCalendarDateOption = {
   date: string;
   expiry: string;
   dte: number | null;
+  strike: number | null;
+  gapStatus: string | null;
+  emaStatus: string | null;
 };
 
 export type TradeCalendarResponse = {
@@ -140,8 +143,9 @@ function formatDate(value: unknown) {
 export async function readTradeCalendar(client: IdealTradesClient): Promise<TradeCalendarResponse> {
   const universeClient = typeof client.schema === 'function' ? client.schema('emaintraday') : client;
   const expiryCalendarClient = typeof client.schema === 'function' ? client.schema('ideal_trades') : client;
+  const marketCandlesClient = typeof client.schema === 'function' ? client.schema('ideal_trades') : client;
 
-  const [universeResult, expiryResult] = await Promise.all([
+  const [universeResult, expiryResult, marketResult] = await Promise.all([
     universeClient
       .from('candidate_universe')
       .select('trade_date,expiry')
@@ -150,7 +154,13 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     expiryCalendarClient
       .from('expiry_calendar')
       .select('trade_date,dte')
-      .order('trade_date', { ascending: true }),
+      .order('trade_date', { ascending: true })
+      .order('dte', { ascending: true }),
+    marketCandlesClient
+      .from('nifty_market_candles')
+      .select('trade_date,trade_time,atm,gap_status,near_ema')
+      .order('trade_date', { ascending: true })
+      .order('trade_time', { ascending: false }),
   ]);
 
   if (universeResult.error) {
@@ -165,14 +175,47 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
       message: expiryResult.error.message ?? 'Unable to load DTE values from Supabase.',
     };
   }
+  if (marketResult.error) {
+    return {
+      status: 'error',
+      message: marketResult.error.message ?? 'Unable to load market candle values from Supabase.',
+    };
+  }
 
   const universeRows = Array.isArray(universeResult.data) ? (universeResult.data as Array<{ trade_date?: string; expiry?: string }>) : [];
   const expiryRows = Array.isArray(expiryResult.data) ? (expiryResult.data as Array<{ trade_date?: string; dte?: number | null }>) : [];
+  const marketRows = Array.isArray(marketResult.data)
+    ? (marketResult.data as Array<{
+        trade_date?: string;
+        atm?: number | null;
+        gap_status?: string | null;
+        near_ema?: number | null;
+      }>)
+    : [];
   const expiryByDate = new Map<string, number | null>();
   for (const row of expiryRows) {
     const date = formatDate(row.trade_date);
     if (!date || expiryByDate.has(date)) continue;
     expiryByDate.set(date, typeof row.dte === 'number' ? row.dte : row.dte === null ? null : Number(row.dte));
+  }
+
+  const marketByDate = new Map<
+    string,
+    {
+      strike: number | null;
+      gapStatus: string | null;
+      emaStatus: string | null;
+    }
+  >();
+  for (const row of marketRows) {
+    const date = formatDate(row.trade_date);
+    if (!date || marketByDate.has(date)) continue;
+    const nearEma = typeof row.near_ema === 'number' ? row.near_ema : row.near_ema === null ? null : Number(row.near_ema);
+    marketByDate.set(date, {
+      strike: typeof row.atm === 'number' ? row.atm : row.atm === null ? null : Number(row.atm),
+      gapStatus: row.gap_status === 'Flat' ? 'No Gap' : row.gap_status ?? null,
+      emaStatus: nearEma === null ? null : 'Near EMA',
+    });
   }
 
   const seen = new Set<string>();
@@ -181,7 +224,15 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     const expiry = formatDate(row.expiry);
     if (!date || !expiry || seen.has(date)) return accumulator;
     seen.add(date);
-    accumulator.push({ date, expiry, dte: expiryByDate.get(date) ?? null });
+    const market = marketByDate.get(date) ?? null;
+    accumulator.push({
+      date,
+      expiry,
+      dte: expiryByDate.get(date) ?? null,
+      strike: market?.strike ?? null,
+      gapStatus: market?.gapStatus ?? null,
+      emaStatus: market?.emaStatus ?? null,
+    });
     return accumulator;
   }, []);
 

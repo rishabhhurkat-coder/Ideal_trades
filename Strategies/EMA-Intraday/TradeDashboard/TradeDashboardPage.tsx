@@ -1325,6 +1325,10 @@ function TradeModal({
                                     onUpdateDraft((current) => ({
                                       ...current,
                                       trade_date: option.date,
+                                      expiry: option.expiry,
+                                      track_strike: option.strike === null ? '' : String(option.strike),
+                                      gap_status: option.gapStatus ?? '',
+                                      ema_status: option.emaStatus ?? '',
                                     }));
                                   }}
                                 >
