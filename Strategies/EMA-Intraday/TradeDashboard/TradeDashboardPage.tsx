@@ -2056,9 +2056,6 @@ export function TradeDashboardPage() {
     }, {} as Record<DashboardPreset, number>);
   }, [ddFloor, filteredByColumns]);
 
-  const totalPlAmount = visibleRows.reduce((total, row) => total + row.plAmount, 0);
-  const totalDrawdownAmount = visibleRows.reduce((min, row) => Math.min(min, row.ddAmount), 0);
-  const totalTradeCount = visibleRows.length;
   const totalDays = new Set(visibleRows.map((row) => row.tradeDate)).size;
 
   useEffect(() => {
@@ -2310,39 +2307,11 @@ export function TradeDashboardPage() {
 
   return (
     <section className="trade-dashboard">
-      <section className="trade-kpi-shell">
-        <div className="trade-kpi-grid">
-          <article className="trade-kpi-card">
-            <div className="trade-kpi-copy">
-              <span>Total Trades</span>
-              <strong>{totalTradeCount}</strong>
-            </div>
-            <div className="trade-kpi-icon trade-kpi-icon--neutral">◫</div>
-          </article>
-          <article className="trade-kpi-card">
-            <div className="trade-kpi-copy">
-              <span>PL Amt</span>
-              <strong className={totalPlAmount >= 0 ? 'trade-kpi-positive' : 'trade-kpi-negative'}>{formatSignedCurrency(totalPlAmount)}</strong>
-            </div>
-            <div className="trade-kpi-icon trade-kpi-icon--positive">↗</div>
-          </article>
-          <article className="trade-kpi-card">
-            <div className="trade-kpi-copy">
-              <span>DD Amt (Min)</span>
-              <strong className="trade-kpi-negative">{formatSignedCurrency(totalDrawdownAmount)}</strong>
-            </div>
-            <div className="trade-kpi-icon trade-kpi-icon--negative">↘</div>
-          </article>
-        </div>
-
-      </section>
-
       <section className="trade-log-card">
         <div className="trade-log-card-heading">
           <h3>Trade Log</h3>
           <button className="button primary trade-add-day-button" type="button" onClick={beginAddTradeDay}>
-            <span aria-hidden="true">▣</span>
-            <span>Add Trade Day</span>
+            <span>+Trade</span>
           </button>
         </div>
 

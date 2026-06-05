@@ -46,13 +46,15 @@ input {
 .master-shell {
   display: flex;
   min-height: 100dvh;
+  margin-top: -108px;
   background: #f7f5ef;
 }
 
 .master-sidebar {
   flex: 0 0 auto;
   width: 88px;
-  min-height: 100dvh;
+  min-height: calc(100dvh - 20px);
+  margin-top: 128px;
   display: grid;
   align-content: start;
   gap: 26px;
@@ -267,8 +269,10 @@ input {
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  gap: 20px;
-  padding: 0 32px 32px;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 0;
+  padding: 0 32px 18px;
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, 0.96), transparent 28%),
     linear-gradient(180deg, #faf8f3 0%, #f3efe7 100%);
@@ -279,7 +283,7 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 2px 4px;
+  padding: 0 2px 2px;
 }
 
 .master-eyebrow {
@@ -316,8 +320,13 @@ input {
   gap: 10px;
 }
 
+.strategy-master-content {
+  gap: 10px;
+  padding-top: 128px;
+}
+
 .strategy-master-add-button {
-  min-height: 48px;
+  min-height: 46px;
   padding: 0 18px;
   border-radius: 14px;
   box-shadow: 0 10px 24px rgba(8, 50, 46, 0.12);
@@ -401,7 +410,7 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 28px 28px 18px;
+  padding: 18px 28px 12px;
 }
 
 .master-card-heading h2 {
@@ -427,18 +436,19 @@ input {
 .strategy-table-card {
   overflow: hidden;
   width: 100%;
+  margin-top: 0;
 }
 
 .strategy-table-card .master-card-heading {
-  padding-bottom: 12px;
+  padding: 10px 24px 6px;
 }
 
 .strategy-table-card .table-shell thead th {
-  padding: 12px 12px 10px;
+  padding: 10px 12px 8px;
 }
 
 .strategy-table-card .table-shell tbody td {
-  padding: 10px 12px;
+  padding: 8px 12px;
 }
 
 .strategy-table-card .row-actions {
@@ -506,6 +516,8 @@ input {
 
 .trade-dashboard {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 18px;
   color: #133734;
 }
@@ -689,8 +701,10 @@ input {
 
 .trade-log-card {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 12px;
-  padding: 16px;
+  padding: 16px 16px 12px;
 }
 
 .trade-log-card-heading {
@@ -891,6 +905,7 @@ input {
 
 .ema-content {
   gap: 10px;
+  padding-top: 128px;
 }
 
 .header-actions {
@@ -958,6 +973,30 @@ input {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+  cursor: move;
+  user-select: none;
+}
+
+.modal-x-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid #d9d2c5;
+  border-radius: 10px;
+  color: #173432;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.modal-x-button:hover {
+  color: #ffffff;
+  border-color: #0b5d50;
+  background: #0b5d50;
 }
 
 .ema-modal-header h2 {
@@ -2977,13 +3016,13 @@ tbody tr:hover {
 .strategy-modal {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  width: min(920px, calc(100vw - 40px));
+  gap: 12px;
+  width: min(820px, calc(100vw - 40px));
   max-height: calc(100vh - 40px);
   overflow: hidden;
   border: 1px solid #e4dccd;
   border-radius: 22px;
-  padding: 20px;
+  padding: 18px;
   background:
     radial-gradient(circle at top right, rgba(10, 93, 82, 0.08), transparent 32%),
     linear-gradient(180deg, #ffffff 0%, #f8f6f0 100%);
@@ -2996,6 +3035,8 @@ tbody tr:hover {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+  cursor: move;
+  user-select: none;
 }
 
 .strategy-modal-header h2 {
@@ -3003,16 +3044,14 @@ tbody tr:hover {
 }
 
 .strategy-modal-body {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
 }
 
 .strategy-modal-close {
-  min-height: 42px;
-  padding: 0 16px;
-  border-radius: 12px;
+  flex: 0 0 auto;
 }
 
 @media (max-width: 820px) {
@@ -3023,6 +3062,7 @@ tbody tr:hover {
   .master-sidebar {
     width: 100%;
     min-height: auto;
+    margin-top: 0;
     gap: 16px;
     padding: 16px;
   }
@@ -3048,7 +3088,7 @@ tbody tr:hover {
   }
 
   .master-content {
-    padding: 12px 18px 18px;
+    padding: 4px 18px 16px;
   }
 
   .master-page-header {

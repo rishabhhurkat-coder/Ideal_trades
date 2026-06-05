@@ -239,7 +239,6 @@ export function HistoricalDataPage() {
             onClick={() => void handleDownloadData()}
             disabled={isBusy}
           >
-            <span aria-hidden="true">â†“</span>
             <span>Download Cash Data</span>
           </button>
 
@@ -274,7 +273,6 @@ export function HistoricalDataPage() {
             onClick={handleUpdateOptionsData}
             disabled={isBusy}
           >
-            <span aria-hidden="true">â†“</span>
             <span>Download Options Data</span>
           </button>
 

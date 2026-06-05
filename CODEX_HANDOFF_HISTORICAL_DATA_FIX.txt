@@ -1,0 +1,28 @@
+Codex handoff note - Historical Data fix
+
+Date: 2026-06-04
+Workspace: G:\My Drive\H&L\Ideal Trades
+
+User-approved priority:
+1. Fix Historical Data connection/runtime problem first.
+
+Observed issue:
+- Historical Data popup shows a runtime error using a missing Python path:
+  C:\Users\Dell\AppData\Local\Programs\Python\Python313\python.exe
+- The command then fails before running:
+  Strategies\EMA-Intraday\HistoricalData\build_historical_db.py
+
+Planned order:
+1. Find the local app/server code that launches build_historical_db.py.
+2. Replace the hardcoded or invalid Python 3.13 path with a valid Python resolver.
+3. Keep script and data paths correctly quoted/handled for Google Drive paths with spaces.
+4. Build/test the app after the connection fix.
+5. Then continue with mojibake, modal, and spacing cleanup only after the runtime fix is stable.
+
+Do not redesign the Trade table in this pass.
+
+Completed in this pass:
+- Historical Data Python launcher now avoids broken py -3 resolution and uses python by default.
+- Direct historical DB summary command succeeds.
+- /api/kite/historical-candles returned success after the fix.
+- UI cleanup also completed: mojibake removed, modal X/Esc behavior added, Strategy modal centering fixed, and key dead-space grid stretching reduced.

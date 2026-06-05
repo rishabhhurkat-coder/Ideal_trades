@@ -23,6 +23,7 @@ const historicalSymbol = 'NIFTY 50';
 const historicalTimeframeLabel = '3 Minute';
 const historicalChunkDays = 60;
 const defaultKiteApiKey = 'zz9755o0bpmqlz0u';
+const pythonCommand = process.env.IDEAL_TRADES_PYTHON || 'python';
 
 type KiteSession = {
   access_token: string;
@@ -527,7 +528,8 @@ function snapshotToHistoricalMetadata(snapshot: HistoricalDbSnapshot): Historica
 
 function runPythonJsonCommand(args: string[], input = ''): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn('py', args, { windowsHide: true });
+    const normalizedArgs = args[0]?.startsWith('-') ? args.slice(1) : args;
+    const child = spawn(pythonCommand, normalizedArgs, { windowsHide: true });
     let stdout = '';
     let stderr = '';
 

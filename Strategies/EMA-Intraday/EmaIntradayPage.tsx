@@ -1,5 +1,6 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
 import { HistoricalDataPage } from './HistoricalData/HistoricalDataPage';
+import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { MastersPage } from './Masters/MastersPage';
 import { TradeDashboardPage } from './TradeDashboard/TradeDashboardPage';
 
@@ -36,6 +37,64 @@ function EmaModal({
   children: ReactNode;
 }) {
   const compact = title === 'Historical Data';
+  const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
+
+  const startModalDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, input, select, textarea, label')) return;
+
+    event.preventDefault();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: modalOffset.x,
+      offsetY: modalOffset.y,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const dragState = dragRef.current;
+      if (!dragState || moveEvent.pointerId !== dragState.pointerId) return;
+
+      setModalOffset({
+        x: dragState.offsetX + (moveEvent.clientX - dragState.startX),
+        y: dragState.offsetY + (moveEvent.clientY - dragState.startY),
+      });
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const dragState = dragRef.current;
+      if (!dragState || upEvent.pointerId !== dragState.pointerId) return;
+
+      dragRef.current = null;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   return (
     <div className="ema-modal-backdrop" role="presentation" onClick={onClose}>
@@ -45,14 +104,17 @@ function EmaModal({
         aria-modal="true"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
+        style={{
+          transform: `translate(${modalOffset.x}px, ${modalOffset.y}px)`,
+        }}
       >
-        <div className="ema-modal-header">
+        <div className="ema-modal-header" onPointerDown={startModalDrag}>
           <div>
             {compact ? null : <p className="eyebrow">EMA Intraday</p>}
             <h2>{title}</h2>
           </div>
-          <button className="button secondary" type="button" onClick={onClose}>
-            Close
+          <button className="modal-x-button" type="button" onClick={onClose} aria-label="Close">
+            X
           </button>
         </div>
         <div className="ema-modal-body">{children}</div>

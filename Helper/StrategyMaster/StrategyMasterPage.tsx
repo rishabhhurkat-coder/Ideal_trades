@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { EmaIntradayPage } from '../../Strategies/EMA-Intraday/EmaIntradayPage';
 import { StrategyForm } from './StrategyForm';
 import { StrategyTable } from './StrategyTable';
@@ -88,6 +88,14 @@ export function StrategyMasterPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isStrategyModalOpen, setIsStrategyModalOpen] = useState(false);
+  const [strategyModalOffset, setStrategyModalOffset] = useState({ x: 0, y: 0 });
+  const strategyModalDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const {
     strategies,
     status,
@@ -124,6 +132,65 @@ export function StrategyMasterPage() {
   };
 
   const shellClassName = `master-shell${isSidebarCollapsed ? ' master-shell--sidebar-collapsed' : ' master-shell--sidebar-expanded'}`;
+
+  const closeStrategyModal = () => {
+    strategyModalDragRef.current = null;
+    setIsStrategyModalOpen(false);
+    setEditingStrategy(null);
+    setStrategyModalOffset({ x: 0, y: 0 });
+  };
+
+  const startStrategyModalDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('button, input, select, textarea, label')) return;
+
+    event.preventDefault();
+    strategyModalDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: strategyModalOffset.x,
+      offsetY: strategyModalOffset.y,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const dragState = strategyModalDragRef.current;
+      if (!dragState || moveEvent.pointerId !== dragState.pointerId) return;
+
+      setStrategyModalOffset({
+        x: dragState.offsetX + (moveEvent.clientX - dragState.startX),
+        y: dragState.offsetY + (moveEvent.clientY - dragState.startY),
+      });
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const dragState = strategyModalDragRef.current;
+      if (!dragState || upEvent.pointerId !== dragState.pointerId) return;
+
+      strategyModalDragRef.current = null;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+
+  useEffect(() => {
+    if (!isStrategyModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeStrategyModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isStrategyModalOpen]);
 
   if (activePage === 'ema-intraday') {
     return (
@@ -213,7 +280,7 @@ export function StrategyMasterPage() {
         onMasters={() => void loadStrategies()}
       />
 
-      <section className="master-content">
+      <section className="master-content strategy-master-content">
         <section className="master-page-header">
           <div>
             <p className="eyebrow master-eyebrow">Workspace</p>
@@ -224,10 +291,11 @@ export function StrategyMasterPage() {
               className="button primary strategy-master-add-button"
               type="button"
               onClick={() => {
-                setSelectedStrategy(null);
-                setEditingStrategy(null);
-                setIsStrategyModalOpen(true);
-              }}
+      setSelectedStrategy(null);
+      setEditingStrategy(null);
+      setStrategyModalOffset({ x: 0, y: 0 });
+      setIsStrategyModalOpen(true);
+    }}
             >
               <span aria-hidden="true">+</span>
               <span>Strategy</span>
@@ -249,6 +317,7 @@ export function StrategyMasterPage() {
               setSelectedStrategy(strategy.strategy_name);
               setIsStrategyModalOpen(false);
               setEditingStrategy(null);
+              setStrategyModalOffset({ x: 0, y: 0 });
               if (strategy.strategy_name === 'EMA Intraday') {
                 setActivePage('ema-intraday');
               } else {
@@ -258,6 +327,7 @@ export function StrategyMasterPage() {
             onEdit={(strategy) => {
               setSelectedStrategy(strategy.strategy_name);
               setEditingStrategy(strategy);
+              setStrategyModalOffset({ x: 0, y: 0 });
               setIsStrategyModalOpen(true);
             }}
             onDelete={(strategy) => {
@@ -273,8 +343,7 @@ export function StrategyMasterPage() {
             className="strategy-modal-backdrop"
             role="presentation"
             onClick={() => {
-              setIsStrategyModalOpen(false);
-              setEditingStrategy(null);
+              closeStrategyModal();
             }}
           >
             <section
@@ -283,21 +352,24 @@ export function StrategyMasterPage() {
               aria-modal="true"
               aria-label={editingStrategy ? 'Edit Strategy' : 'Add Strategy'}
               onClick={(event) => event.stopPropagation()}
+              style={{
+                transform: `translate(${strategyModalOffset.x}px, ${strategyModalOffset.y}px)`,
+              }}
             >
-              <div className="strategy-modal-header">
+              <div className="strategy-modal-header" onPointerDown={startStrategyModalDrag}>
                 <div>
                   <p className="eyebrow master-eyebrow">Strategy Master</p>
                   <h2>{editingStrategy ? `Edit Strategy #${editingStrategy.id}` : 'Add Strategy'}</h2>
                 </div>
                 <button
-                  className="button secondary strategy-modal-close"
+                  className="modal-x-button strategy-modal-close"
                   type="button"
                   onClick={() => {
-                    setIsStrategyModalOpen(false);
-                    setEditingStrategy(null);
+                    closeStrategyModal();
                   }}
+                  aria-label="Close"
                 >
-                  Close
+                  X
                 </button>
               </div>
               <div className="strategy-modal-body">
@@ -308,12 +380,11 @@ export function StrategyMasterPage() {
                   onSubmit={async (values) => {
                     const saved = await saveStrategy(values);
                     if (saved) {
-                      setIsStrategyModalOpen(false);
+                      closeStrategyModal();
                     }
                   }}
                   onCancel={() => {
-                    setIsStrategyModalOpen(false);
-                    setEditingStrategy(null);
+                    closeStrategyModal();
                   }}
                 />
               </div>
