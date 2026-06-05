@@ -891,14 +891,15 @@ function TradeModal({
     }
 
     const selectedExpiryDate = draft.expiry ? parseCalendarDate(draft.expiry) : null;
+    const latestMonthIndex = Math.max(expiryCalendarMonths.length - 1, 0);
     const selectedMonthIndex = selectedExpiryDate
       ? findExpiryMonthIndexByYearMonth(expiryCalendarMonths, selectedExpiryDate.getFullYear(), selectedExpiryDate.getMonth())
-      : 0;
+      : latestMonthIndex;
 
-    setVisibleExpiryMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
-    const firstMonthParts = expiryCalendarMonths[0]?.label.split(' ') ?? [];
-    const firstYear = firstMonthParts.length > 0 ? firstMonthParts[firstMonthParts.length - 1] : '';
-    setExpirySelectedYear((selectedExpiryDate ? String(selectedExpiryDate.getFullYear()) : '') || firstYear);
+    setVisibleExpiryMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : latestMonthIndex);
+    const latestMonthParts = expiryCalendarMonths[latestMonthIndex]?.label.split(' ') ?? [];
+    const latestYear = latestMonthParts.length > 0 ? latestMonthParts[latestMonthParts.length - 1] : '';
+    setExpirySelectedYear((selectedExpiryDate ? String(selectedExpiryDate.getFullYear()) : '') || latestYear);
   }, [draft.expiry, expiryCalendarMonths]);
 
   useEffect(() => {
@@ -938,7 +939,7 @@ function TradeModal({
   return (
     <div className="trade-modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="trade-modal"
+        className={`trade-modal${isExpiryStage ? ' trade-modal--expiry' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label="Add trade"
@@ -1009,13 +1010,13 @@ function TradeModal({
                               style={{
                                 display: 'grid',
                                 gridTemplateColumns: '0.9fr 1.6fr',
-                                gap: '0.75rem',
-                                padding: '0.75rem',
+                                gap: '0.6rem',
+                                padding: '0.6rem',
                                 borderBottom: '1px solid rgba(255, 255, 255, 0.14)',
                                 background: 'rgba(255, 255, 255, 0.12)',
                               }}
                             >
-                              <div style={{ display: 'grid', gap: '0.35rem', alignContent: 'start' }}>
+                              <div style={{ display: 'grid', gap: '0.3rem', alignContent: 'start' }}>
                                 {expiryYears.map((year) => (
                                   <button
                                     key={year}
@@ -1045,7 +1046,7 @@ function TradeModal({
                                 style={{
                                   display: 'grid',
                                   gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                                  gap: '0.35rem',
+                                  gap: '0.3rem',
                                   alignContent: 'start',
                                 }}
                               >
@@ -1087,8 +1088,8 @@ function TradeModal({
                             className="trade-expiry-calendar"
                             style={{
                               display: 'grid',
-                              gap: '1rem',
-                              maxHeight: 'calc(100vh - 240px)',
+                              gap: '0.45rem',
+                              maxHeight: 'min(34vh, 280px)',
                               overflowY: 'auto',
                               paddingRight: '0.25rem',
                             }}
@@ -1100,7 +1101,7 @@ function TradeModal({
                                   border: '1px solid rgba(12, 94, 83, 0.12)',
                                   borderRadius: '16px',
                                   background: 'rgba(255, 255, 255, 0.72)',
-                                  padding: '0.75rem',
+                                  padding: '0.4rem',
                                 }}
                               >
                                 <div
@@ -1109,21 +1110,21 @@ function TradeModal({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'space-between',
-                                    marginBottom: '0.75rem',
-                                    fontSize: '0.9rem',
+                                    marginBottom: '0.3rem',
+                                    fontSize: '0.8rem',
                                     fontWeight: 700,
                                     color: '#0f5d52',
                                   }}
                                 >
                                   <span>{visibleExpiryMonth.label}</span>
-                                  <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>Expiry dates</span>
+                                  <span style={{ fontSize: '0.68rem', opacity: 0.7 }}>Expiry dates</span>
                                 </div>
                                 <div
                                   className="trade-expiry-grid"
                                   style={{
                                     display: 'grid',
                                     gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                                    gap: '0.4rem',
+                                    gap: '0.2rem',
                                   }}
                                 >
                                   {CALENDAR_WEEKDAY_NAMES.map((weekday) => (
@@ -1131,9 +1132,9 @@ function TradeModal({
                                       key={weekday}
                                       style={{
                                         textAlign: 'center',
-                                        fontSize: '0.68rem',
+                                        fontSize: '0.6rem',
                                         fontWeight: 700,
-                                        letterSpacing: '0.08em',
+                                        letterSpacing: '0.06em',
                                         textTransform: 'uppercase',
                                         color: 'rgba(15, 93, 82, 0.56)',
                                       }}
@@ -1166,8 +1167,8 @@ function TradeModal({
                                           flexDirection: 'column',
                                           alignItems: 'center',
                                           justifyContent: 'center',
-                                          minHeight: '3.1rem',
-                                          borderRadius: '12px',
+                                          minHeight: '1.95rem',
+                                          borderRadius: '10px',
                                           border: '1px solid rgba(12, 94, 83, 0.12)',
                                           background: day.isExpiry
                                             ? draft.expiry === day.dateKey
@@ -1177,7 +1178,8 @@ function TradeModal({
                                           color: day.inMonth ? '#0d312c' : 'rgba(13, 49, 44, 0.35)',
                                           fontWeight: 700,
                                           cursor: day.isExpiry ? 'pointer' : 'not-allowed',
-                                          padding: '0.35rem 0.2rem',
+                                          padding: '0.12rem 0.1rem',
+                                          opacity: day.isExpiry ? 1 : 0.1,
                                         }}
                                       >
                                         <span className="trade-expiry-day-number">{day.dayLabel}</span>
@@ -1195,7 +1197,7 @@ function TradeModal({
                     ) : null}
                   </div>
                 </label>
-                <label className="trade-setup-field">
+                <label className="trade-setup-field trade-setup-field--date">
                   <span>Date</span>
                   <div className="trade-date-picker">
                     <button

@@ -1192,6 +1192,60 @@ input {
   box-shadow: none;
 }
 
+.trade-modal--expiry .trade-modal-topbar {
+  padding-bottom: 4px;
+}
+
+.trade-modal--expiry .trade-modal-close {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.trade-modal--expiry .trade-modal-close svg {
+  width: 11px;
+  height: 11px;
+}
+
+.trade-modal--expiry .trade-setup-heading {
+  margin-top: -8px;
+  margin-bottom: -8px;
+}
+
+.trade-modal--expiry .trade-setup-brand {
+  gap: 8px;
+}
+
+.trade-modal--expiry .trade-setup-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.trade-modal--expiry .trade-setup-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.trade-modal--expiry .trade-setup-brand h4 {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.trade-modal--expiry .trade-setup-divider {
+  margin-top: -6px;
+}
+
+.trade-modal--expiry .trade-setup-inline {
+  gap: 8px;
+  align-items: start;
+}
+
 .trade-detail-backdrop {
   position: fixed;
   inset: 0;
@@ -1475,12 +1529,23 @@ input {
   gap: 6px;
 }
 
+.trade-setup-field--date .trade-date-picker {
+  width: fit-content;
+}
+
 .trade-date-trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   text-align: left;
+}
+
+.trade-setup-field--date .trade-date-trigger {
+  width: max-content;
+  min-width: 0;
+  white-space: nowrap;
+  padding-right: 28px;
 }
 
 .trade-date-trigger-caret {
@@ -1747,15 +1812,15 @@ input {
 
 .trade-expiry-calendar {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 
 .trade-expiry-month {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   border: 1px solid #e4dccd;
-  border-radius: 14px;
-  padding: 12px;
+  border-radius: 12px;
+  padding: 8px;
   background: linear-gradient(180deg, #ffffff 0%, #f8f5ee 100%);
 }
 
@@ -1768,29 +1833,29 @@ input {
 
 .trade-expiry-month-title {
   color: #133734;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 800;
   text-align: center;
 }
 
 .trade-expiry-month-nav-button {
-  min-width: 52px;
-  min-height: 32px;
-  padding: 5px 8px;
+  min-width: 44px;
+  min-height: 28px;
+  padding: 4px 6px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .trade-expiry-weekdays,
 .trade-expiry-days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
 .trade-expiry-weekdays span {
   color: #5f6d69;
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 800;
   text-align: center;
   text-transform: uppercase;
@@ -1799,13 +1864,14 @@ input {
 .trade-expiry-day {
   display: grid;
   place-items: center;
-  gap: 3px;
-  min-height: 48px;
+  gap: 2px;
+  min-height: 30px;
   border: 1px solid #e2dccf;
-  border-radius: 12px;
-  padding: 6px 4px;
+  border-radius: 10px;
+  padding: 3px 2px;
   text-align: center;
   background: #ffffff;
+  opacity: 0.1;
 }
 
 .trade-expiry-day.placeholder {
@@ -1818,6 +1884,7 @@ input {
   color: #0f5b34;
   background: linear-gradient(180deg, #edf6ee 0%, #dfeedd 100%);
   cursor: pointer;
+  opacity: 1;
 }
 
 .trade-expiry-day.expiry:hover {
@@ -1834,19 +1901,20 @@ input {
   color: #89948d;
   background: #f4f1e8;
   cursor: not-allowed;
+  opacity: 0.1;
 }
 
 .trade-expiry-day-number {
   display: block;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 800;
   line-height: 1;
 }
 
 .trade-expiry-calendar-empty {
-  padding: 16px;
+  padding: 10px;
   border: 1px dashed #d7cfbf;
-  border-radius: 12px;
+  border-radius: 10px;
   color: #5f6d69;
   background: #faf7f1;
 }
