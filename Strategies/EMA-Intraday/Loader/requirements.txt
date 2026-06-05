@@ -1,0 +1,6 @@
+pandas
+pyarrow
+duckdb
+google-cloud-storage
+supabase
+python-dotenv
