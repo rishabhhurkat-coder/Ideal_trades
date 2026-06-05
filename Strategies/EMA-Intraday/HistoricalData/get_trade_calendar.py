@@ -73,6 +73,13 @@ def fetch_expiry_rows(expiry: str | None = None):
     return payload
 
 
+def to_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def main() -> int:
     expiry = sys.argv[1].strip() if len(sys.argv) > 1 else ""
 
@@ -80,11 +87,22 @@ def main() -> int:
         if not expiry:
             rows = fetch_expiry_rows(None)
             grouped: dict[str, dict[str, object]] = {}
+            date_index: dict[str, dict[str, object]] = {}
             for row in rows:
                 expiry_date = str(row.get("expiry_date") or "")
                 trade_date = str(row.get("trade_date") or "")
+                dte = to_int(row.get("dte"))
+                eff_dte = to_int(row.get("eff_dte"))
                 if not expiry_date or not trade_date:
                     continue
+
+                if trade_date not in date_index:
+                    date_index[trade_date] = {
+                        "date": trade_date,
+                        "expiryDate": expiry_date,
+                        "dte": dte,
+                        "effDte": eff_dte,
+                    }
 
                 bucket = grouped.setdefault(
                     expiry_date,
@@ -102,7 +120,8 @@ def main() -> int:
                 bucket["eligibleDates"] = int(bucket["eligibleDates"]) + 1
 
             expiries = sorted(grouped.values(), key=lambda item: (str(item["firstDate"]), str(item["expiry"])))
-            return emit({"status": "success", "expiries": expiries})
+            dates = sorted(date_index.values(), key=lambda item: (str(item["date"]), str(item["expiryDate"])))
+            return emit({"status": "success", "expiries": expiries, "dates": dates})
 
         dates = fetch_expiry_rows(expiry)
 
@@ -113,7 +132,9 @@ def main() -> int:
                 "dates": [
                     {
                         "date": str(row.get("trade_date") or ""),
+                        "expiryDate": str(row.get("expiry_date") or expiry),
                         "dte": int(row.get("dte") or 0),
+                        "effDte": int(row.get("eff_dte") or 0),
                     }
                     for row in dates
                     if row.get("trade_date")

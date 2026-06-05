@@ -608,6 +608,14 @@ function formatDteValue(dte: number | null) {
   return dte === null ? '' : String(dte);
 }
 
+function formatEffDteValue(effDte: number | null) {
+  return effDte === null ? '' : String(effDte);
+}
+
+function formatTradeCalendarOption(option: TradeCalendarDateOption) {
+  return `${formatExpiryDisplay(option.date)} • Exp ${formatExpiryDisplay(option.expiryDate)} • DTE ${option.dte} • Eff ${option.effDte}`;
+}
+
 function formatExpiryCalendarOption(option: TradeCalendarExpiryOption) {
   return `${formatExpiryDisplay(option.expiry)} • ${option.eligibleDates} dates`;
 }
@@ -1022,6 +1030,7 @@ function TradeModal({
   onSave,
   onSaveAndExit,
   onBackToEntry,
+  onOpenSettings,
 }: {
   draft: TradeRecordDraft;
   editingId: string | null;
@@ -1040,6 +1049,7 @@ function TradeModal({
   onSave: () => void;
   onSaveAndExit: () => void;
   onBackToEntry: () => void;
+  onOpenSettings: () => void;
 }) {
   const [activeLegIndex, setActiveLegIndex] = useState(0);
   const [expiryPickerOpen, setExpiryPickerOpen] = useState(false);
@@ -1073,11 +1083,11 @@ function TradeModal({
   }, [open]);
 
   useEffect(() => {
-    if (!draft.expiry) return;
+    if (!draft.trade_date) return;
     setExpiryPickerOpen(false);
     setExpiryMonthMenuOpen(false);
     setDatePickerOpen(false);
-  }, [draft.expiry]);
+  }, [draft.trade_date]);
 
   useEffect(() => {
     if (expiryCalendarMonths.length === 0) {
@@ -1112,7 +1122,8 @@ function TradeModal({
   const isEntryStage = flowStage === 'entry';
   const isExitStage = flowStage === 'exit';
   const isSetupReady = Boolean(draft.expiry && draft.trade_date && draft.track_strike.trim());
-  const selectedExpiryOption = expiryOptions.find((option) => option.expiry === draft.expiry) ?? null;
+  const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
+  const selectedTradeDateExpiry = selectedTradeDateOption?.expiryDate || draft.expiry || '';
   const visibleExpiryMonth = expiryCalendarMonths[visibleExpiryMonthIndex] ?? expiryCalendarMonths[0] ?? null;
   const expiryYears = Array.from(
     new Set(
@@ -1122,7 +1133,6 @@ function TradeModal({
       }),
     ),
   ).filter(Boolean);
-  const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
 
   function updateTradeWithOptionalRule(
     legIndex: number,
@@ -1158,7 +1168,7 @@ function TradeModal({
                   <h4>Trade Date Calendar</h4>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
-                  <button className="button secondary trade-settings-button" type="button" onClick={openSettings} aria-label="Open trade dashboard settings">
+                  <button className="button secondary trade-settings-button" type="button" onClick={onOpenSettings} aria-label="Open trade dashboard settings">
                     <SettingsIcon />
                   </button>
                 </div>
@@ -1173,10 +1183,10 @@ function TradeModal({
                     <button
                       className="trade-theme-control trade-date-trigger"
                       type="button"
-                      disabled={loadingCalendar}
+                      disabled
                       onClick={() => setExpiryPickerOpen((current) => !current)}
                     >
-                      <span>{selectedExpiryOption ? formatExpiryDisplay(selectedExpiryOption.expiry) : 'Select expiry'}</span>
+                      <span>{selectedTradeDateExpiry ? formatExpiryDisplay(selectedTradeDateExpiry) : 'Derived expiry'}</span>
                       <span className="trade-date-trigger-caret">▼</span>
                     </button>
                     {expiryPickerOpen ? (
@@ -1399,31 +1409,31 @@ function TradeModal({
                   </div>
                 </label>
                 <label className="trade-setup-field trade-setup-field--date">
-                  <span>Date</span>
+                  <span>Trade Date</span>
                   <div className="trade-date-picker">
                     <button
                       className="trade-theme-control trade-date-trigger"
                       type="button"
-                      disabled={isExitStage || loadingCalendar || !draft.expiry}
+                      disabled={isExitStage || loadingCalendar}
                       onClick={() => setDatePickerOpen((current) => !current)}
                     >
-                      <span>{selectedTradeDateOption ? formatExpiryDisplay(selectedTradeDateOption.date) : 'Select date'}</span>
+                      <span>{selectedTradeDateOption ? formatExpiryDisplay(selectedTradeDateOption.date) : 'Select trade date'}</span>
                       <span className="trade-date-trigger-caret">▼</span>
                     </button>
                     {datePickerOpen ? (
                       <div className="trade-date-popover">
                         <div className="trade-date-menu">
-                          <div className="trade-date-menu-header">Track &amp; Trade</div>
+                          <div className="trade-date-menu-header">Trade Date Calendar</div>
                           <div className="trade-date-menu-list">
                             <button
                               className={`trade-date-menu-item${!draft.trade_date ? ' active' : ''}`}
                               type="button"
                               onClick={() => {
-                                onUpdateDraft((current) => ({ ...current, trade_date: '' }));
+                                onUpdateDraft((current) => ({ ...current, trade_date: '', expiry: '', track_strike: '' }));
                                 setDatePickerOpen(false);
                               }}
                             >
-                              <span>Select date</span>
+                              <span>Select trade date</span>
                               <span>-</span>
                             </button>
                             {tradeDates.map((option) => (
@@ -1432,12 +1442,17 @@ function TradeModal({
                                 className={`trade-date-menu-item${draft.trade_date === option.date ? ' active' : ''}`}
                                 type="button"
                                 onClick={() => {
-                                  onUpdateDraft((current) => ({ ...current, trade_date: option.date }));
+                                  onUpdateDraft((current) => ({
+                                    ...current,
+                                    trade_date: option.date,
+                                    expiry: option.expiryDate,
+                                    track_strike: '',
+                                  }));
                                   setDatePickerOpen(false);
                                 }}
                               >
                                 <span>{formatExpiryDisplay(option.date)}</span>
-                                <span>{option.dte}</span>
+                                <span>{`${formatDteLabel(option.dte)} / Eff ${option.effDte}`}</span>
                               </button>
                             ))}
                           </div>
@@ -1449,6 +1464,10 @@ function TradeModal({
                 <label className="trade-setup-field">
                   <span>DTE</span>
                   <input className="trade-theme-control" value={formatDteValue(selectedTradeDateOption?.dte ?? null)} readOnly placeholder="Enter DTE" />
+                </label>
+                <label className="trade-setup-field">
+                  <span>Eff DTE</span>
+                  <input className="trade-theme-control" value={formatEffDteValue(selectedTradeDateOption?.effDte ?? null)} readOnly placeholder="Derived from trade date" />
                 </label>
                 <label className="trade-setup-field">
                   <span>Strike</span>
@@ -1759,7 +1778,7 @@ function TradeModal({
               className="button primary"
               type="button"
               onClick={onSave}
-              disabled={saving || !draft.expiry}
+              disabled={saving || !draft.trade_date}
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -1772,7 +1791,7 @@ function TradeModal({
                 className="button primary"
                 type="button"
                 onClick={onSaveAndExit}
-                disabled={saving || !draft.expiry || !draft.trade_date || !draft.legs.some((leg) => leg.trades.some(hasCompleteEntryDraft))}
+                disabled={saving || !draft.trade_date || !draft.legs.some((leg) => leg.trades.some(hasCompleteEntryDraft))}
               >
                 {saving ? 'Saving...' : 'Save & Exit'}
               </button>
@@ -1786,7 +1805,7 @@ function TradeModal({
                 className="button primary"
                 type="button"
                 onClick={onSave}
-                disabled={saving || !draft.expiry || !draft.trade_date || !draft.legs.some((leg) => leg.trades.some(hasCompleteExitDraft))}
+                disabled={saving || !draft.trade_date || !draft.legs.some((leg) => leg.trades.some(hasCompleteExitDraft))}
               >
                 {saving ? 'Saving...' : 'Save Exit'}
               </button>
@@ -2110,12 +2129,7 @@ export function TradeDashboardPage() {
   useEffect(() => {
     if (!open) {
       setTradeDates([]);
-      setLoadingCalendar(false);
-      return;
-    }
-
-    if (!draft.expiry) {
-      setTradeDates([]);
+      setExpiryOptions([]);
       setLoadingCalendar(false);
       return;
     }
@@ -2124,21 +2138,28 @@ export function TradeDashboardPage() {
     setLoadingCalendar(true);
 
     const timer = window.setTimeout(() => {
-      void fetchTradeCalendar(draft.expiry)
+      void fetchTradeCalendar()
         .then((calendar) => {
           if (!active) return;
+          setExpiryOptions(calendar.expiries ?? []);
           const nextDates = calendar.dates ?? [];
           setTradeDates(nextDates);
 
           setDraft((current) => {
             if (!current.trade_date) return current;
-            const stillValid = nextDates.some((option) => option.date === current.trade_date);
-            return stillValid ? current : { ...current, trade_date: '', track_strike: '' };
+            const selected = nextDates.find((option) => option.date === current.trade_date);
+            return selected
+              ? {
+                  ...current,
+                  expiry: selected.expiryDate || current.expiry,
+                }
+              : { ...current, trade_date: '', expiry: '', track_strike: '' };
           });
         })
-        .catch((currentError) => {
+        .catch(() => {
           if (!active) return;
           setTradeDates([]);
+          setExpiryOptions([]);
         })
         .finally(() => {
           if (active) setLoadingCalendar(false);
@@ -2149,7 +2170,7 @@ export function TradeDashboardPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [draft.expiry, open]);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !draft.trade_date) {
@@ -2631,10 +2652,11 @@ export function TradeDashboardPage() {
       loadingCalendar={loadingCalendar}
       transitionRules={transitionRules}
       flowStage={flowStage}
-      open={open}
-      saving={saving}
+        open={open}
+        saving={saving}
         onClose={closeModal}
         onUpdateDraft={setDraft}
+        onOpenSettings={openSettings}
         onSave={() => {
           if (flowStage === 'expiry') {
             void handleSave('entry');

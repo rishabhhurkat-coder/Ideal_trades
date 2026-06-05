@@ -113,15 +113,21 @@ def main() -> int:
 
             expiry = None
             expiry_source_date = None
+            expiry_dte = 0
+            expiry_eff_dte = 0
             expiry_row = fetch_expiry_row(trade_date, fallback=False)
             if expiry_row:
                 expiry = str(expiry_row.get("expiry_date") or "")
                 expiry_source_date = str(expiry_row.get("trade_date") or "")
+                expiry_dte = int(expiry_row.get("dte") or 0)
+                expiry_eff_dte = int(expiry_row.get("eff_dte") or 0)
             else:
                 fallback_expiry_row = fetch_expiry_row(trade_date, fallback=True)
                 if fallback_expiry_row:
                     expiry = str(fallback_expiry_row.get("expiry_date") or "")
                     expiry_source_date = str(fallback_expiry_row.get("trade_date") or "")
+                    expiry_dte = int(fallback_expiry_row.get("dte") or 0)
+                    expiry_eff_dte = int(fallback_expiry_row.get("eff_dte") or 0)
 
             if atm_strike is None:
                 return fail(f'ATM strike not found for {trade_date}.')
@@ -134,6 +140,8 @@ def main() -> int:
                     "tradeDate": trade_date,
                     "atmStrike": atm_strike,
                     "expiry": expiry,
+                    "dte": expiry_dte,
+                    "effDte": expiry_eff_dte,
                     "atmSourceDate": atm_source_date,
                     "expirySourceDate": expiry_source_date,
                 }

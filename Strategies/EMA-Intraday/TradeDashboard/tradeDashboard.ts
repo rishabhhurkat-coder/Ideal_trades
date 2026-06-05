@@ -42,6 +42,8 @@ export type TradeContext = {
   tradeDate?: string;
   atmStrike?: number;
   expiry?: string;
+  dte?: number;
+  effDte?: number;
   atmSourceDate?: string | null;
   expirySourceDate?: string | null;
   message?: string;
@@ -56,7 +58,9 @@ export type TradeCalendarExpiryOption = {
 
 export type TradeCalendarDateOption = {
   date: string;
+  expiryDate: string;
   dte: number;
+  effDte: number;
 };
 
 export type TradeCalendarResponse = {
