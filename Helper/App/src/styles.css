@@ -2002,21 +2002,23 @@ input {
 
 .trade-selected-date-value {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 54px;
   border: 1px solid #ded8cd;
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 8px 10px;
   color: #0d4d47;
   background: linear-gradient(180deg, #ffffff 0%, #f7f2e9 100%);
+  text-align: center;
 }
 
 .trade-selected-date-value strong {
   display: block;
   white-space: pre-line;
   line-height: 1.15;
-  padding-top: 4px;
+  padding-top: 0;
 }
 
 .trade-selected-date-value svg {
@@ -2026,9 +2028,19 @@ input {
 }
 
 .trade-selected-date-value strong {
+  flex: 0 1 auto;
   white-space: pre-line;
   line-height: 1.2;
   font-size: 12px;
+  text-align: center;
+}
+
+.trade-date-side-panel .trade-status-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  text-align: center;
 }
 
 .trade-setup-heading {

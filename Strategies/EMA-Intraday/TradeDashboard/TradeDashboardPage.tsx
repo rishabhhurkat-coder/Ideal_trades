@@ -628,14 +628,14 @@ function formatGapBadge(option: TradeCalendarDateOption | null) {
 
   if (normalizedStatus.includes('gap dn') || normalizedStatus.includes('gap down') || (option.gapValue ?? 0) < 0) {
     return {
-      label: `GAP DN ${roundedGapValue ?? ''}`.trim(),
+      label: `GAP DN - ${roundedGapValue ?? ''}`.trim(),
       statusClass: 'status-gap-down',
     };
   }
 
   if (normalizedStatus.includes('gap up') || (option.gapValue ?? 0) > 0) {
     return {
-      label: `GAP UP ${roundedGapValue ?? ''}`.trim(),
+      label: `GAP UP + ${roundedGapValue ?? ''}`.trim(),
       statusClass: 'status-gap-up',
     };
   }
@@ -644,6 +644,17 @@ function formatGapBadge(option: TradeCalendarDateOption | null) {
     label: option.gapStatus.toUpperCase(),
     statusClass: `status-${toStatusClass(option.gapStatus)}`,
   };
+}
+
+function formatIndianNumber(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') return '';
+  const numeric = typeof value === 'number' ? value : Number(String(value).replace(/,/g, ''));
+  if (!Number.isFinite(numeric)) return String(value);
+  return numeric.toLocaleString('en-IN');
+}
+
+function parseIndianNumberInput(value: string) {
+  return value.replace(/,/g, '');
 }
 
 function buildTradeDateCalendar(tradeDates: TradeCalendarDateOption[]) {
@@ -1138,6 +1149,16 @@ function TradeModal({
   }, [open, tradeDates]);
   const [visibleTradeMonthIndex, setVisibleTradeMonthIndex] = useState(0);
   const [calendarView, setCalendarView] = useState<'dates' | 'months' | 'years'>('dates');
+  const latestTradeDateOption = useMemo(() => {
+    if (tradeDates.length === 0) return null;
+    return tradeDates.reduce((latest, current) => (current.date > latest.date ? current : latest));
+  }, [tradeDates]);
+  const latestTradeMonthIndex = useMemo(() => {
+    if (!latestTradeDateOption) return 0;
+    const monthKey = latestTradeDateOption.date.slice(0, 7);
+    const foundIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === monthKey);
+    return foundIndex >= 0 ? foundIndex : Math.max(tradeCalendarMonths.length - 1, 0);
+  }, [latestTradeDateOption, tradeCalendarMonths]);
 
   useEffect(() => {
     if (!open) return;
@@ -1152,6 +1173,20 @@ function TradeModal({
 
     setActiveLegIndex((current) => Math.min(current, Math.max(draft.legs.length - 1, 0)));
   }, [draft.legs, open, selectedTradeId]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) {
@@ -1169,11 +1204,30 @@ function TradeModal({
     }
 
     const selectedTradeDate = draft.trade_date ? parseCalendarDate(draft.trade_date) : null;
-    const selectedMonthKey = selectedTradeDate ? toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7) : tradeCalendarMonths[0]?.monthKey ?? '';
+    const selectedMonthKey = selectedTradeDate ? toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7) : tradeCalendarMonths[tradeCalendarMonths.length - 1]?.monthKey ?? '';
     const selectedMonthIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === selectedMonthKey);
 
     setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
   }, [draft.trade_date, open, tradeCalendarMonths]);
+
+  useEffect(() => {
+    if (!open || tradeDates.length === 0 || draft.trade_date || !latestTradeDateOption) return;
+
+    onUpdateDraft((current) => {
+      if (current.trade_date) return current;
+      return {
+        ...current,
+        trade_date: latestTradeDateOption.date,
+        expiry: latestTradeDateOption.expiry,
+        track_strike: latestTradeDateOption.strike === null ? '' : String(latestTradeDateOption.strike),
+        gap_status: latestTradeDateOption.gapStatus ?? '',
+        ema_status: latestTradeDateOption.emaStatus ?? '',
+      };
+    });
+
+    setVisibleTradeMonthIndex(latestTradeMonthIndex);
+    setCalendarView('dates');
+  }, [draft.trade_date, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, open, tradeDates.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -1532,11 +1586,6 @@ function TradeModal({
                       </div>
                     )}
 
-                    <div className="trade-date-legend">
-                      <span><i className="trade-date-swatch available" /> Applicable (Eligible to Select)</span>
-                      <span><i className="trade-date-swatch unavailable" /> Not Applicable</span>
-                      <span><i className="trade-date-swatch today" /> Today</span>
-                    </div>
                   </div>
                 </section>
 
@@ -1570,12 +1619,17 @@ function TradeModal({
                     <span>Strike</span>
                     <input
                       className="trade-theme-control"
-                      type="number"
-                      step="0.05"
+                      type="text"
+                      inputMode="numeric"
                       placeholder={selectedTradeDateOption?.strike === null ? 'ATM unavailable' : 'Enter strike'}
-                      value={draft.track_strike}
+                      value={formatIndianNumber(draft.track_strike)}
                       disabled={isExitStage || !draft.trade_date}
-                      onChange={(event) => onUpdateDraft((current) => ({ ...current, track_strike: event.target.value }))}
+                      onChange={(event) =>
+                        onUpdateDraft((current) => ({
+                          ...current,
+                          track_strike: parseIndianNumberInput(event.target.value),
+                        }))
+                      }
                     />
                   </label>
                   <label className="trade-setup-field">
