@@ -50,9 +50,26 @@ export type TradeCalendarDateOption = {
   emaStatus: string | null;
 };
 
+export type TradeCalendarPerformanceTrace = {
+  query: string;
+  columns: string;
+  orderBy: string[];
+  pageSize: number;
+  pageCount: number;
+  rowsReturned: number;
+  uniqueDatesReturned: number;
+  duplicateRowsSkipped: number;
+  t2QueryStart: number;
+  t3ResponseReceived: number;
+  t4TransformComplete: number;
+  backendMs: number;
+  transformMs: number;
+};
+
 export type TradeCalendarResponse = {
   status: 'success' | 'error';
   dates?: TradeCalendarDateOption[];
+  trace?: TradeCalendarPerformanceTrace;
   message?: string;
 };
 
@@ -79,7 +96,8 @@ export type TradeRecordDraft = {
 
 const DEFAULT_TRADE_QUANTITY = '75';
 const EOD_EXIT_TIME = '15:30';
-const TRADE_DASHBOARD_ENDPOINT = '/api/ema-intraday/trade-dashboard';
+const TRADE_DASHBOARD_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
+let tradeCalendarRequestCount = 0;
 
 function nowIso() {
   return new Date().toISOString();
@@ -324,38 +342,52 @@ export function emptyTradeLeg(legNo: number) {
   return emptyTradeLegDraft(legNo);
 }
 
-type TradeDashboardApiResponse =
-  | {
-      status: 'success';
-      records?: TradeRecord[];
-      record?: TradeRecord;
-      message?: string;
-    }
-  | {
-      status: 'error';
-      message?: string;
-    };
-type TradeDashboardSuccessResponse = Extract<TradeDashboardApiResponse, { status: 'success' }>;
+function readStoredTradeRecords(): TradeRecord[] {
+  if (typeof window === 'undefined') return [];
 
-async function readTradeDashboardResponse(response: Response): Promise<TradeDashboardSuccessResponse> {
-  const result = (await response.json()) as TradeDashboardApiResponse;
+  const rawValue = window.localStorage.getItem(TRADE_DASHBOARD_STORAGE_KEY);
+  console.info('SAVE_T6 JSON Parse', {
+    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
+    hasValue: Boolean(rawValue),
+    rawLength: rawValue?.length ?? 0,
+  });
 
-  if (!response.ok || result.status !== 'success') {
-    throw new Error(result.message ?? `Trade dashboard request failed with HTTP ${response.status}.`);
+  if (!rawValue) return [];
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeLegacyRecord).filter((value): value is TradeRecord => value !== null);
+  } catch (error) {
+    console.warn('Failed to parse stored trade dashboard records.', error);
+    return [];
   }
+}
 
-  return result;
+function writeStoredTradeRecords(records: TradeRecord[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(TRADE_DASHBOARD_STORAGE_KEY, JSON.stringify(records));
+}
+
+function buildTradeRecordFromDraft(draft: TradeRecordDraft, editingId: string | null): TradeRecord {
+  const existingRecord = editingId ? readStoredTradeRecords().find((record) => record.id === editingId) ?? null : null;
+  const now = nowIso();
+
+  return {
+    id: existingRecord?.id ?? editingId ?? uuid(),
+    trade_date: draft.trade_date,
+    track_strike: toNumberOrNull(draft.track_strike),
+    expiry: draft.expiry || null,
+    gap_status: draft.gap_status,
+    ema_status: draft.ema_status,
+    legs: normalizeDraftLegs(draft.legs),
+    created_at: existingRecord?.created_at ?? now,
+    updated_at: now,
+  };
 }
 
 export async function loadTradeRecords(): Promise<TradeRecord[]> {
-  const response = await fetch(TRADE_DASHBOARD_ENDPOINT, {
-    method: 'GET',
-    credentials: 'include',
-  });
-  const result = await readTradeDashboardResponse(response);
-  const records = result.records ?? [];
-
-  return records.map((record) => normalizeLegacyRecord(record)).filter((value): value is TradeRecord => value !== null);
+  return readStoredTradeRecords();
 }
 
 function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
@@ -393,54 +425,71 @@ function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
 }
 
 export async function saveTradeRecord(draft: TradeRecordDraft, editingId: string | null): Promise<TradeRecord> {
-  const response = await fetch(TRADE_DASHBOARD_ENDPOINT, {
-    method: editingId ? 'PUT' : 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify({
-      editingId,
-      record: {
-        id: editingId,
-        trade_date: draft.trade_date,
-        track_strike: draft.track_strike,
-        expiry: draft.expiry,
-        gap_status: draft.gap_status,
-        ema_status: draft.ema_status,
-        legs: draft.legs,
-      },
-    }),
+  const record = buildTradeRecordFromDraft(draft, editingId);
+  console.info('SAVE_T2 Payload Created', {
+    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
+    action: editingId ? 'update' : 'create',
+    recordId: record.id,
+    tradeDate: record.trade_date,
+    legs: record.legs.length,
   });
-  const result = await readTradeDashboardResponse(response);
-  const record = result.record ?? null;
-  if (!record) {
-    throw new Error('Trade dashboard save did not return a record.');
-  }
+  console.info('SAVE_T3 Request Sent', {
+    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
+    action: editingId ? 'update' : 'create',
+    recordId: record.id,
+  });
 
-  return normalizeLegacyRecord(record) ?? record;
+  const records = readStoredTradeRecords();
+  const nextRecords = records.some((entry) => entry.id === record.id)
+    ? records.map((entry) => (entry.id === record.id ? record : entry))
+    : [...records, record];
+  writeStoredTradeRecords(nextRecords);
+
+  console.info('SAVE_T4 Response Status', {
+    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
+    status: 'success',
+    recordCount: nextRecords.length,
+  });
+  console.info('SAVE_T5 Response Body', record);
+
+  return record;
 }
 
 export async function deleteTradeEntry(recordId: string, tradeId: string) {
-  const response = await fetch(TRADE_DASHBOARD_ENDPOINT, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    credentials: 'include',
-    body: JSON.stringify({
-      recordId,
-      tradeId,
-    }),
-  });
-  await readTradeDashboardResponse(response);
+  const records = readStoredTradeRecords();
+  const nextRecords = records
+    .map((record) => {
+      if (record.id !== recordId) return record;
+
+      const nextLegs = record.legs
+        .map((leg) => ({
+          ...leg,
+          trades: leg.trades.filter((trade) => trade.id !== tradeId),
+        }))
+        .filter((leg) => leg.trades.length > 0);
+
+      return nextLegs.length > 0 ? { ...record, legs: nextLegs, updated_at: nowIso() } : null;
+    })
+    .filter((record): record is TradeRecord => record !== null);
+
+  writeStoredTradeRecords(nextRecords);
 }
 
 export async function fetchTradeCalendar(): Promise<TradeCalendarResponse> {
+  const requestId = ++tradeCalendarRequestCount;
+  const startedAt = performance.now();
+  console.info(`[EMA Trade Perf] fetchTradeCalendar start #${requestId}`);
   const result = await readSupabaseTradeCalendar(supabase);
   if (result.status !== 'success') {
     throw new Error(result.message ?? 'Unable to load trade calendar.');
   }
 
+  if (result.trace) {
+    console.info(
+      `[EMA Trade Perf] fetchTradeCalendar end #${requestId} duration=${(performance.now() - startedAt).toFixed(1)}ms rows=${result.trace.rowsReturned} uniqueDates=${result.trace.uniqueDatesReturned} pages=${result.trace.pageCount}`,
+    );
+  } else {
+    console.info(`[EMA Trade Perf] fetchTradeCalendar end #${requestId} duration=${(performance.now() - startedAt).toFixed(1)}ms`);
+  }
   return result;
 }

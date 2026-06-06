@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { fetchEntryReasons, fetchExitReasons, fetchTradeTransitionRules } from '../Masters/mastersService';
 import type { EntryReason, ExitReason, TradeTransitionRule } from '../Masters/masters';
 import {
@@ -11,6 +11,7 @@ import {
   rememberTradeQuantity,
   saveTradeRecord,
   type TradeCalendarDateOption,
+  type TradeCalendarPerformanceTrace,
   type TradeEntryDraft,
   type TradeEntryRecord,
   type TradeLegDraft,
@@ -18,6 +19,37 @@ import {
   type TradeRecord,
   type TradeRecordDraft,
 } from './tradeDashboard';
+
+type TradePerfTimeline = {
+  t1ModalOpenStart?: number;
+  t2QueryStart?: number;
+  t3ResponseReceived?: number;
+  t4TransformComplete?: number;
+  t5CalendarStatePopulated?: number;
+  t6FirstCalendarRenderComplete?: number;
+  rowsReturned?: number;
+  uniqueDatesReturned?: number;
+  duplicateRowsSkipped?: number;
+  pageCount?: number;
+  query?: string;
+  columns?: string;
+  orderBy?: string[];
+  backendMs?: number;
+  transformMs?: number;
+  reactStateMs?: number;
+  renderMs?: number;
+  totalMs?: number;
+  calendarBuildMs?: number;
+  modalVisibleMs?: number;
+  sourceTrace?: TradeCalendarPerformanceTrace;
+  modalVisibleAt?: number;
+};
+
+function getTradePerfTimeline() {
+  return window as Window & {
+    __emaTradePerf?: TradePerfTimeline;
+  };
+}
 
 type TradeRow = {
   recordId: string;
@@ -576,6 +608,44 @@ function toStatusClass(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
+function formatGapBadge(option: TradeCalendarDateOption | null) {
+  if (!option?.gapStatus) {
+    return {
+      label: '-',
+      statusClass: '',
+    };
+  }
+
+  const normalizedStatus = option.gapStatus.trim().toLowerCase();
+  const roundedGapValue = option.gapValue === null || option.gapValue === undefined ? null : Math.round(Math.abs(option.gapValue));
+
+  if (normalizedStatus === 'no gap') {
+    return {
+      label: 'NO GAP',
+      statusClass: 'status-no-gap',
+    };
+  }
+
+  if (normalizedStatus.includes('gap dn') || normalizedStatus.includes('gap down') || (option.gapValue ?? 0) < 0) {
+    return {
+      label: `GAP DN ${roundedGapValue ?? ''}`.trim(),
+      statusClass: 'status-gap-down',
+    };
+  }
+
+  if (normalizedStatus.includes('gap up') || (option.gapValue ?? 0) > 0) {
+    return {
+      label: `GAP UP ${roundedGapValue ?? ''}`.trim(),
+      statusClass: 'status-gap-up',
+    };
+  }
+
+  return {
+    label: option.gapStatus.toUpperCase(),
+    statusClass: `status-${toStatusClass(option.gapStatus)}`,
+  };
+}
+
 function buildTradeDateCalendar(tradeDates: TradeCalendarDateOption[]) {
   const dateMap = new Map(
     tradeDates
@@ -1053,7 +1123,19 @@ function TradeModal({
   onOpenSettings: () => void;
 }) {
   const [activeLegIndex, setActiveLegIndex] = useState(0);
-  const tradeCalendarMonths = useMemo(() => buildTradeDateCalendar(tradeDates), [tradeDates]);
+  const tradeCalendarMonths = useMemo(() => {
+    const startedAt = performance.now();
+    const months = buildTradeDateCalendar(tradeDates);
+    const durationMs = performance.now() - startedAt;
+    if (open && tradeDates.length > 0) {
+      const timeline = getTradePerfTimeline();
+      timeline.__emaTradePerf = {
+        ...(timeline.__emaTradePerf ?? {}),
+        calendarBuildMs: durationMs,
+      };
+    }
+    return months;
+  }, [open, tradeDates]);
   const [visibleTradeMonthIndex, setVisibleTradeMonthIndex] = useState(0);
   const [calendarView, setCalendarView] = useState<'dates' | 'months' | 'years'>('dates');
 
@@ -1093,6 +1175,26 @@ function TradeModal({
     setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
   }, [draft.trade_date, open, tradeCalendarMonths]);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const timeline = getTradePerfTimeline();
+      const modalOpenStart = timeline.__emaTradePerf?.t1ModalOpenStart;
+      if (typeof modalOpenStart === 'number' && timeline.__emaTradePerf?.modalVisibleAt === undefined) {
+        const modalVisibleAt = performance.now();
+        timeline.__emaTradePerf = {
+          ...(timeline.__emaTradePerf ?? {}),
+          modalVisibleAt,
+          modalVisibleMs: modalVisibleAt - modalOpenStart,
+        };
+        console.info(`[EMA Trade Perf] T1->modalVisible=${(modalVisibleAt - modalOpenStart).toFixed(1)}ms`);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [open]);
+
   const activeLeg = draft.legs[activeLegIndex] ?? draft.legs[0];
   const activeTradeCount = activeLeg?.trades.length ?? 0;
   const isExpiryStage = flowStage === 'expiry';
@@ -1126,6 +1228,59 @@ function TradeModal({
       };
     });
   }, [draft.trade_date, draft.track_strike, onUpdateDraft, selectedTradeDateOption]);
+
+  useLayoutEffect(() => {
+    if (!open || loadingCalendar || tradeDates.length === 0) return;
+    const timeline = getTradePerfTimeline();
+    const trace = timeline.__emaTradePerf;
+    if (!trace || trace.t5CalendarStatePopulated !== undefined) return;
+
+    const t5 = performance.now();
+    timeline.__emaTradePerf = {
+      ...trace,
+      t5CalendarStatePopulated: t5,
+      reactStateMs: typeof trace.t4TransformComplete === 'number' ? t5 - trace.t4TransformComplete : undefined,
+    };
+
+    const frameId = window.requestAnimationFrame(() => {
+      const currentTimeline = getTradePerfTimeline();
+      const currentTrace = currentTimeline.__emaTradePerf;
+      const t1 = currentTrace?.t1ModalOpenStart;
+      const t2 = currentTrace?.t2QueryStart;
+      const t3 = currentTrace?.t3ResponseReceived;
+      const t4 = currentTrace?.t4TransformComplete;
+      const currentT5 = currentTrace?.t5CalendarStatePopulated;
+      if (
+        typeof t1 !== 'number' ||
+        typeof t2 !== 'number' ||
+        typeof t3 !== 'number' ||
+        typeof t4 !== 'number' ||
+        typeof currentT5 !== 'number'
+      ) {
+        return;
+      }
+      if (!currentTrace) return;
+
+      if (currentTrace.t6FirstCalendarRenderComplete === undefined) {
+        const t6 = performance.now();
+        const nextTrace = {
+          ...currentTrace,
+          t6FirstCalendarRenderComplete: t6,
+          backendMs: t3 - t2,
+          transformMs: t4 - t3,
+          reactStateMs: currentT5 - t4,
+          renderMs: t6 - currentT5,
+          totalMs: t6 - t1,
+        };
+        currentTimeline.__emaTradePerf = nextTrace;
+        console.info(
+          `[EMA Trade Perf] T1-T6 total=${nextTrace.totalMs.toFixed(1)}ms backend=${nextTrace.backendMs.toFixed(1)}ms transform=${nextTrace.transformMs.toFixed(1)}ms reactState=${nextTrace.reactStateMs.toFixed(1)}ms render=${nextTrace.renderMs.toFixed(1)}ms rows=${nextTrace.rowsReturned ?? 0} uniqueDates=${nextTrace.uniqueDatesReturned ?? 0} duplicateRows=${nextTrace.duplicateRowsSkipped ?? 0} pages=${nextTrace.pageCount ?? 0} calendarBuild=${(nextTrace.calendarBuildMs ?? 0).toFixed(1)}ms`,
+        );
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [loadingCalendar, open, tradeDates.length]);
 
   function updateTradeWithOptionalRule(
     legIndex: number,
@@ -1425,19 +1580,19 @@ function TradeModal({
                   </label>
                   <label className="trade-setup-field">
                     <span>GAP Status</span>
-                    <div className="trade-gap-field-row">
-                      <div
-                      className={`trade-theme-control trade-gap-status-display trade-status-control${selectedTradeDateOption?.gapStatus ? ` status-${toStatusClass(selectedTradeDateOption.gapStatus)}` : ''}`}
-                      aria-label="GAP status derived from the selected trade date"
-                    >
-                        {selectedTradeDateOption?.gapStatus ?? '—'}
-                      </div>
-                      {selectedTradeDateOption?.gapStatus && selectedTradeDateOption.gapStatus !== 'No Gap' ? (
-                        <div className="trade-theme-control trade-gap-value" aria-label="GAP value derived from the selected trade date">
-                          {selectedTradeDateOption.gapValue ?? '—'}
+                    {(() => {
+                      const gapBadge = formatGapBadge(selectedTradeDateOption);
+                      return (
+                        <div className="trade-gap-field-row">
+                          <div
+                            className={`trade-theme-control trade-gap-status-display trade-status-control${gapBadge.statusClass ? ` ${gapBadge.statusClass}` : ''}`}
+                            aria-label="GAP status derived from the selected trade date"
+                          >
+                            {gapBadge.label}
+                          </div>
                         </div>
-                      ) : null}
-                    </div>
+                      );
+                    })()}
                   </label>
                   <label className="trade-setup-field">
                     <span>EMA Status</span>
@@ -2117,6 +2272,24 @@ export function TradeDashboardPage() {
     const timer = window.setTimeout(() => {      void fetchTradeCalendar()
         .then((calendar) => {
           if (!active) return;
+          const timeline = getTradePerfTimeline();
+          const trace = calendar.trace;
+          timeline.__emaTradePerf = {
+            ...(timeline.__emaTradePerf ?? {}),
+            t2QueryStart: trace?.t2QueryStart,
+            t3ResponseReceived: trace?.t3ResponseReceived,
+            t4TransformComplete: trace?.t4TransformComplete,
+            rowsReturned: trace?.rowsReturned,
+            uniqueDatesReturned: trace?.uniqueDatesReturned,
+            duplicateRowsSkipped: trace?.duplicateRowsSkipped,
+            pageCount: trace?.pageCount,
+            query: trace?.query,
+            columns: trace?.columns,
+            orderBy: trace?.orderBy,
+            backendMs: trace?.backendMs,
+            transformMs: trace?.transformMs,
+            sourceTrace: trace,
+          };
           setTradeDates(calendar.dates ?? []);
         })
         .catch(() => {
@@ -2298,6 +2471,10 @@ export function TradeDashboardPage() {
   }
 
   function beginAddTradeDay() {
+    const timeline = getTradePerfTimeline();
+    timeline.__emaTradePerf = {
+      t1ModalOpenStart: performance.now(),
+    };
     setEditingId(null);
     setSelectedTradeId(null);
     setDetailRow(null);
@@ -2362,6 +2539,11 @@ export function TradeDashboardPage() {
     setSaving(true);
     setError(null);
     try {
+      console.info('SAVE_T1 Button Click', {
+        editingId,
+        nextStage,
+        tradeDate: draft.trade_date,
+      });
       const savedRecord = await saveTradeRecord(draft, editingId);
       const selectedTradeQuantity =
         selectedTradeId !== null

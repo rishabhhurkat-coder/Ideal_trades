@@ -1732,15 +1732,9 @@ input {
 
 .trade-gap-field-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   align-items: center;
-}
-
-.trade-gap-status-display,
-.trade-gap-value {
-  padding-right: 11px;
-  text-align: center;
 }
 
 .trade-gap-status-display {
@@ -2734,9 +2728,9 @@ input {
 }
 
 .trade-status-control.status-no-gap {
-  color: #5b4210;
-  border-color: #d3b66f;
-  background: linear-gradient(180deg, #fff8df 0%, #f2e4b7 100%);
+  color: #4b5563;
+  border-color: #cdd5df;
+  background: linear-gradient(180deg, #f8fafc 0%, #e5e7eb 100%);
 }
 
 .trade-status-control.status-far-ema {
