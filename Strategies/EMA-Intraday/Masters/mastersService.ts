@@ -1,4 +1,4 @@
-import { ensureDefaultUserId, idealTradesSchema } from '../../../Helper/Supabase/idealTrades';
+import { emaIntradaySchema, ensureDefaultUserId } from '../../../Helper/Supabase/idealTrades';
 import type {
   EntryReason,
   ExitReason,
@@ -30,7 +30,7 @@ function uuid() {
 }
 
 function schemaTable(tableName: string) {
-  return idealTradesSchema().from(tableName);
+  return emaIntradaySchema().from(tableName);
 }
 
 function sortAuditTrail(rows: TradeTransitionAuditTrail[]) {

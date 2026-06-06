@@ -33,7 +33,24 @@ export type TradeCalendarDateOption = {
 export type TradeCalendarResponse = {
   status: 'success' | 'error';
   dates?: TradeCalendarDateOption[];
+  trace?: TradeCalendarPerformanceTrace;
   message?: string;
+};
+
+export type TradeCalendarPerformanceTrace = {
+  query: string;
+  columns: string;
+  orderBy: string[];
+  pageSize: number;
+  pageCount: number;
+  rowsReturned: number;
+  uniqueDatesReturned: number;
+  duplicateRowsSkipped: number;
+  t2QueryStart: number;
+  t3ResponseReceived: number;
+  t4TransformComplete: number;
+  backendMs: number;
+  transformMs: number;
 };
 
 export type TradeContextResponse = {
@@ -119,9 +136,9 @@ type NiftyMarketStateRow = {
   source?: string | null;
 };
 
-const IDEAL_TRADES_SCHEMA = 'ideal_trades';
+const EMA_INTRADAY_SCHEMA = 'emaintraday';
 
-function schemaClient(client: IdealTradesClient, schema = IDEAL_TRADES_SCHEMA) {
+function schemaClient(client: IdealTradesClient, schema = EMA_INTRADAY_SCHEMA) {
   return typeof client.schema === 'function' ? client.schema(schema) : client;
 }
 
@@ -140,6 +157,8 @@ type TimedRows<T> = {
   error: { message?: string } | null;
   durationMs: number;
   pageCount: number;
+  startedAt: number;
+  completedAt: number;
 };
 
 async function fetchAllRows<T>(
@@ -159,6 +178,8 @@ async function fetchAllRows<T>(
         error: response.error,
         durationMs: performance.now() - startedAt,
         pageCount,
+        startedAt,
+        completedAt: performance.now(),
       };
     }
 
@@ -175,17 +196,20 @@ async function fetchAllRows<T>(
     error: null,
     durationMs: performance.now() - startedAt,
     pageCount,
+    startedAt,
+    completedAt: performance.now(),
   };
 }
 
 export async function readTradeCalendar(client: IdealTradesClient): Promise<TradeCalendarResponse> {
   const dateSelectionClient = schemaClient(client, 'emaintraday');
+  const calendarColumns = '"Date","expiry","dte","ATM","GAP","GAP_STATUS","EMA_Status","eff_dte","Candle No"';
 
   const startedAt = performance.now();
   const selectionResult = await fetchAllRows<EmaIntradayCandleRow>(async (from, to) =>
     dateSelectionClient
       .from('date_selection')
-      .select('"Date","expiry","dte","ATM","GAP","GAP_STATUS","EMA_Status","eff_dte","Candle No"')
+      .select(calendarColumns)
       .order('Date', { ascending: true })
       .order('Candle No', { ascending: false })
       .range(from, to),
@@ -199,10 +223,15 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
   }
 
   const seen = new Set<string>();
+  let duplicateRowsSkipped = 0;
   const dates = selectionResult.data.reduce<TradeCalendarDateOption[]>((accumulator, row) => {
     const date = formatDate(row.Date);
     const expiry = formatDate(row.expiry);
-    if (!date || !expiry || seen.has(date)) return accumulator;
+    if (!date || !expiry) return accumulator;
+    if (seen.has(date)) {
+      duplicateRowsSkipped += 1;
+      return accumulator;
+    }
     seen.add(date);
     accumulator.push({
       date,
@@ -215,14 +244,32 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     });
     return accumulator;
   }, []);
+  const transformCompletedAt = performance.now();
+  const trace: TradeCalendarPerformanceTrace = {
+    query:
+      'emaintraday.date_selection.select("Date","expiry","dte","ATM","GAP","GAP_STATUS","EMA_Status","eff_dte","Candle No").order("Date", ascending true).order("Candle No", ascending false).range(...)',
+    columns: calendarColumns,
+    orderBy: ['Date ASC', 'Candle No DESC'],
+    pageSize: 1000,
+    pageCount: selectionResult.pageCount,
+    rowsReturned: selectionResult.data.length,
+    uniqueDatesReturned: dates.length,
+    duplicateRowsSkipped,
+    t2QueryStart: selectionResult.startedAt,
+    t3ResponseReceived: selectionResult.completedAt,
+    t4TransformComplete: transformCompletedAt,
+    backendMs: selectionResult.completedAt - selectionResult.startedAt,
+    transformMs: transformCompletedAt - selectionResult.completedAt,
+  };
 
   console.info(
-    `[EMA Trade Perf] trade_calendar query duration=${selectionResult.durationMs.toFixed(1)}ms (${selectionResult.pageCount} calls) total=${(performance.now() - startedAt).toFixed(1)}ms`,
+    `[EMA Trade Perf] trade_calendar rows=${trace.rowsReturned} uniqueDates=${trace.uniqueDatesReturned} duplicateRows=${trace.duplicateRowsSkipped} backend=${trace.backendMs.toFixed(1)}ms transform=${trace.transformMs.toFixed(1)}ms total=${(performance.now() - startedAt).toFixed(1)}ms pages=${selectionResult.pageCount}`,
   );
 
   return {
     status: 'success',
     dates,
+    trace,
   };
 }
 

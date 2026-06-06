@@ -72,7 +72,7 @@ Child references:
 - `trades.strategy_id`
 - `activity_log.strategy_id`
 
-### `ideal_trades.entry_reasons`
+### `emaintraday.entry_reasons`
 
 Purpose: entry reason master data for EMA Intraday.
 
@@ -98,7 +98,7 @@ Child references:
 - `trade_transition_rules.entry_reason_id`
 - `trade_legs.entry_reason_id`
 
-### `ideal_trades.exit_reasons`
+### `emaintraday.exit_reasons`
 
 Purpose: exit reason master data for EMA Intraday.
 
@@ -125,7 +125,7 @@ Child references:
 - `trade_transition_rules.other_leg_exit_reason_id`
 - `trade_legs.exit_reason_id`
 
-### `ideal_trades.trade_transition_rules`
+### `emaintraday.trade_transition_rules`
 
 Purpose: rules that map strategy, trigger, exit reason, and leg behavior for EMA Intraday transitions.
 
@@ -152,9 +152,9 @@ Foreign keys:
 
 - `strategy_id` -> `ideal_trades.strategies.id`
 - `user_id` -> `ideal_trades.users.id`
-- `exit_reason_id` -> `ideal_trades.exit_reasons.id`
-- `entry_reason_id` -> `ideal_trades.entry_reasons.id`
-- `other_leg_exit_reason_id` -> `ideal_trades.exit_reasons.id`
+- `exit_reason_id` -> `emaintraday.exit_reasons.id`
+- `entry_reason_id` -> `emaintraday.entry_reasons.id`
+- `other_leg_exit_reason_id` -> `emaintraday.exit_reasons.id`
 
 Behavior notes:
 
@@ -215,8 +215,8 @@ Foreign keys:
 
 - `trade_id` -> `ideal_trades.trades.id`
 - `user_id` -> `ideal_trades.users.id`
-- `entry_reason_id` -> `ideal_trades.entry_reasons.id`
-- `exit_reason_id` -> `ideal_trades.exit_reasons.id`
+- `entry_reason_id` -> `emaintraday.entry_reasons.id`
+- `exit_reason_id` -> `emaintraday.exit_reasons.id`
 
 Child references:
 
@@ -270,4 +270,3 @@ Behavior notes:
 - `trades`: 0 rows
 - `trade_legs`: 0 rows
 - `activity_log`: 0 rows
-

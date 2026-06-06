@@ -49,8 +49,6 @@ Ideal Trades/
         HistoricalDataPage.tsx
         KiteConnectService.ts
         build_historical_db.py
-        get_trade_calendar.py
-        get_trade_context.py
         types.ts
         Data/
           ema_intraday_historical.db
@@ -113,7 +111,7 @@ Current seed counts:
 The live master-data flow is:
 
 - Strategy Master reads and writes `ideal_trades.strategies`.
-- EMA Intraday Masters reads and writes `ideal_trades.entry_reasons`, `ideal_trades.exit_reasons`, and `ideal_trades.trade_transition_rules`.
+- EMA Intraday Masters reads and writes `emaintraday.entry_reasons`, `emaintraday.exit_reasons`, and `emaintraday.trade_transition_rules`.
 - `activity_log` is used for transition audit records, but it is currently empty.
 
 ## Data Architecture
@@ -127,8 +125,6 @@ Expiry context is stored in Supabase under `ideal_trades.expiry_calendar`.
 Supporting scripts and metadata:
 
 - `Strategies/EMA-Intraday/HistoricalData/build_historical_db.py`
-- `Strategies/EMA-Intraday/HistoricalData/get_trade_context.py`
-- `Strategies/EMA-Intraday/HistoricalData/get_trade_calendar.py`
 - `Strategies/EMA-Intraday/HistoricalData/Data/metadata.json`
 
 The historical workflow uses SQLite as the local read model for cash-data snapshots and Supabase as the read model for expiry context. The app server reads both through `Helper/App/vite.config.ts` middleware.

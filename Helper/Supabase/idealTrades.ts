@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 
 export const IDEAL_TRADES_SCHEMA = 'ideal_trades';
+export const EMA_INTRADAY_SCHEMA = 'emaintraday';
 export const DEFAULT_USER_ID = '5f2e4d5f-0f72-4bbd-99bb-49d1c4d2d3a1';
 export const DEFAULT_USER_EMAIL = 'ideal-trades@local.dev';
 export const DEFAULT_USER_NAME = 'Ideal Trades';
@@ -8,6 +9,16 @@ export const DEFAULT_USER_NAME = 'Ideal Trades';
 export function idealTradesSchema() {
   if (typeof (supabase as { schema?: (name: string) => unknown }).schema === 'function') {
     return (supabase as { schema: (name: string) => { from: (table: string) => any } }).schema(IDEAL_TRADES_SCHEMA);
+  }
+
+  return {
+    from: (table: string) => supabase.from(table),
+  };
+}
+
+export function emaIntradaySchema() {
+  if (typeof (supabase as { schema?: (name: string) => unknown }).schema === 'function') {
+    return (supabase as { schema: (name: string) => { from: (table: string) => any } }).schema(EMA_INTRADAY_SCHEMA);
   }
 
   return {
