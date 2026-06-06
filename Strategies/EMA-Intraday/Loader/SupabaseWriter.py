@@ -107,7 +107,7 @@ class SupabaseWriter:
 
         return _retry(_load, self._retry_attempts, self._retry_initial_delay, self._retry_max_delay, "fetch universe_config")
 
-    def fetch_expiry_calendar_rows(self, from_date: date, to_date: date) -> list[dict[str, Any]]:
+    def fetch_date_selection_rows(self, from_date: date, to_date: date) -> list[dict[str, Any]]:
         def _load() -> list[dict[str, Any]]:
             page_size = 1000
             start = 0
@@ -115,13 +115,13 @@ class SupabaseWriter:
 
             while True:
                 response = (
-                    self.client.schema(self._config.shared_schema)
-                    .table("expiry_calendar")
-                    .select("trade_date,expiry_date,dte,eff_dte")
-                    .gte("trade_date", from_date.isoformat())
-                    .lte("trade_date", to_date.isoformat())
-                    .order("trade_date", desc=False)
-                    .order("expiry_date", desc=False)
+                    self.client.schema(self._config.ema_schema)
+                    .table("date_selection")
+                    .select('"Date",expiry,dte,eff_dte,"Candle No"')
+                    .gte("Date", from_date.isoformat())
+                    .lte("Date", to_date.isoformat())
+                    .order("Date", desc=False)
+                    .order("Candle No", desc=True)
                     .range(start, start + page_size - 1)
                     .execute()
                 )
@@ -135,9 +135,29 @@ class SupabaseWriter:
                     break
                 start += page_size
 
-            return rows
+            deduped: list[dict[str, Any]] = []
+            seen: set[tuple[str, str]] = set()
+            for row in rows:
+                trade_date = str(row.get("Date") or "")
+                expiry_date = str(row.get("expiry") or "")
+                if not trade_date or not expiry_date:
+                    continue
+                key = (trade_date, expiry_date)
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(
+                    {
+                        "trade_date": trade_date,
+                        "expiry_date": expiry_date,
+                        "dte": row.get("dte"),
+                        "eff_dte": row.get("eff_dte"),
+                    }
+                )
 
-        return _retry(_load, self._retry_attempts, self._retry_initial_delay, self._retry_max_delay, "fetch expiry_calendar")
+            return deduped
+
+        return _retry(_load, self._retry_attempts, self._retry_initial_delay, self._retry_max_delay, "fetch date_selection")
 
     def fetch_universe_loads_rows(self, from_date: date, to_date: date) -> list[dict[str, Any]]:
         def _load() -> list[dict[str, Any]]:
@@ -211,4 +231,3 @@ class SupabaseWriter:
 
     def upsert_load_rows(self, rows: list[dict[str, Any]]) -> int:
         return self.upsert_rows("universe_loads", rows, conflict_columns="trade_date,expiry", schema_name=self._config.ema_schema)
-

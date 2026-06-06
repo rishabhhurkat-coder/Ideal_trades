@@ -402,7 +402,7 @@ def run_loader(
         option_type=universe_config.option_type,
     )
 
-    calendar_rows = writer.fetch_expiry_calendar_rows(universe_config.from_date, universe_config.to_date)
+    calendar_rows = writer.fetch_date_selection_rows(universe_config.from_date, universe_config.to_date)
 
     storage_client = build_storage_client(gcs_config)
     source_files, _expiry_checks = _check_nifty_expiry_files(
@@ -595,9 +595,9 @@ def run_debug_dry_run(
             debug_config = replace(universe_config, from_date=target_trade_date, to_date=target_trade_date)
             stage.rows = 1
 
-        current_stage = "2. expiry_calendar load"
-        with StageLogger("2. expiry_calendar load") as stage:
-            calendar_rows = writer.fetch_expiry_calendar_rows(universe_config.from_date, universe_config.to_date)
+        current_stage = "2. date_selection load"
+        with StageLogger("2. date_selection load") as stage:
+            calendar_rows = writer.fetch_date_selection_rows(universe_config.from_date, universe_config.to_date)
             stage.rows = len(calendar_rows)
 
         current_stage = "3. NIFTY file existence"

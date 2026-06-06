@@ -58,14 +58,18 @@ The active flow no longer uses the yearly `candles/` JSON folder.
 
 ### NIFTY Expiry DTE Table
 
-The expiry calendar is stored in Supabase under `ideal_trades.expiry_calendar` and exposes these columns:
+The calendar source is stored in Supabase under `emaintraday.date_selection` and exposes these columns:
 
-- `trade_date`
-- `expiry_date`
+- `Date`
+- `expiry`
 - `dte`
 - `eff_dte`
+- `ATM`
+- `GAP`
+- `GAP_STATUS`
+- `EMA_Status`
 
-`dte` is the calendar-day gap between `trade_date` and `expiry_date`.
+`dte` is the calendar-day gap between `Date` and `expiry`.
 `eff_dte` is the per-expiry sequence that is `0` on the expiry date and increments backward through earlier rows.
 The trade dashboard calendar filter uses `dte = 0` and `dte = 1`.
 

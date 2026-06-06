@@ -7,14 +7,14 @@ This folder contains the loader infrastructure for the EMA Intraday strategy.
 - Checks exact NIFTY option parquet files in GCS
 - Finds qualifying strikes using the active `universe_config`
 - Writes qualified rows into Supabase tables in the existing `emaintraday` schema
-- Uses `ideal_trades.expiry_calendar` to validate `dte`
+- Uses `emaintraday.date_selection` to validate `dte`
 - Skips `trade_date + expiry` pairs already marked as loaded in `universe_loads`
 
 ## Data flow
 
 1. Load runtime configuration from environment variables and `.env`
 2. Read the active row from `emaintraday.universe_config`
-3. Read `ideal_trades.expiry_calendar` for the active date range
+3. Read `emaintraday.date_selection` for the active date range
 4. Generate exact `NIFTY{EXPIRY}_CE.parquet` and `NIFTY{EXPIRY}_PE.parquet` names
 5. Check each file exists directly in GCS
 6. Skip the expiry if either file is missing
@@ -33,7 +33,7 @@ The live database uses the lowercase Postgres schema name `emaintraday` even tho
 
 Shared calendar data comes from:
 
-- `ideal_trades.expiry_calendar`
+- `emaintraday.date_selection`
 
 ## Environment variables
 
