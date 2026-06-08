@@ -1971,10 +1971,40 @@ function findMatchingTransitionRule(trade: TradeEntryDraft, rules: TradeTransiti
   ) ?? null;
 }
 
-function createTransitionTrade(option: TradeOption, entryReason: string | null) {
+type ReasonOptionLike = {
+  id: string;
+  name: string;
+};
+
+function withSelectedReasonOption<T extends ReasonOptionLike>(rows: T[], selectedValue: string | null | undefined) {
+  if (!selectedValue) return rows;
+  if (rows.some((row) => row.name === selectedValue)) return rows;
+  return [{ id: `selected-${selectedValue}`, name: selectedValue } as T, ...rows];
+}
+
+function getEntryReasonOptions(rows: EntryReason[], selectedValue: string) {
+  return withSelectedReasonOption(rows, selectedValue);
+}
+
+function getExitReasonOptions(rows: ExitReason[], selectedValue: string) {
+  return withSelectedReasonOption(rows, selectedValue);
+}
+
+function getTransitionExitTime(leg: TradeLegDraft, tradeIndex: number, exitReason: string) {
+  if (isEodExitReason(exitReason)) return EOD_EXIT_TIME;
+
+  const selectedTrade = leg.trades[tradeIndex];
+  const selectedExitTime = selectedTrade?.exit_time.trim() ?? '';
+  if (selectedExitTime) return selectedExitTime;
+
+  return leg.trades.find((trade) => trade.exit_time.trim())?.exit_time.trim() ?? '';
+}
+
+function createTransitionTrade(option: TradeOption, entryReason: string | null, entryTime = '') {
   return {
     ...emptyTradeEntry(option),
     entry_reason: entryReason ?? '',
+    entry_time: entryTime,
   };
 }
 
@@ -1992,11 +2022,13 @@ function shiftLegMetadata(leg: TradeLegDraft, shiftFromLegNo: number, delta: num
 function applyTransitionRuleToDraft(
   draft: TradeRecordDraft,
   legIndex: number,
+  tradeIndex: number,
   rule: TradeTransitionRule,
 ) {
   const currentLeg = draft.legs[legIndex];
   if (!currentLeg) return draft;
 
+  const transitionTime = getTransitionExitTime(currentLeg, tradeIndex, rule.exit_reason);
   const exitReasonFor = (option: TradeOption) =>
     option === rule.trigger_option ? rule.exit_reason : rule.other_leg_exit_reason ?? rule.exit_reason;
 
@@ -2011,9 +2043,10 @@ function applyTransitionRuleToDraft(
       ...leg,
       trades: leg.trades.map((trade, index) => {
         if (!exitTargets.has(trade.option)) return trade;
+        if (index !== tradeIndex && trade.exit_reason.trim()) return trade;
 
         const nextExitReason = exitReasonFor(trade.option);
-        const nextExitTime = isEodExitReason(nextExitReason) ? EOD_EXIT_TIME : trade.exit_time;
+        const nextExitTime = transitionTime || trade.exit_time;
 
         return {
           ...trade,
@@ -2024,18 +2057,10 @@ function applyTransitionRuleToDraft(
     };
   });
 
-  const updatedCurrentLeg = updatedLegs[legIndex];
   const nextLegNo = currentLeg.leg_no + 1;
   const existingNextLegIndex = updatedLegs.findIndex((leg) => leg.leg_no === nextLegNo);
 
   if (!rule.create_new_leg || !rule.new_leg_option) {
-    return {
-      ...draft,
-      legs: updatedLegs,
-    };
-  }
-
-  if (!updatedCurrentLeg || !isLegComplete(updatedCurrentLeg)) {
     return {
       ...draft,
       legs: updatedLegs,
@@ -2057,7 +2082,7 @@ function applyTransitionRuleToDraft(
     leg_no: nextLegNo,
     created_from_leg_no: currentLeg.leg_no,
     trigger_exit_reason: rule.exit_reason,
-    trades: [createTransitionTrade(rule.new_leg_option, rule.entry_reason)],
+    trades: [createTransitionTrade(rule.new_leg_option, rule.entry_reason, transitionTime)],
   };
 
   return {
@@ -2653,6 +2678,23 @@ function TradeModal({
     onUpdateDraft((current) => updateTradeInLeg(current, legIndex, tradeIndex, updater));
   }
 
+  function updateExitReasonWithTransition(legIndex: number, tradeIndex: number, nextExitReason: string) {
+    onUpdateDraft((current) => {
+      const updatedDraft = updateTradeInLeg(current, legIndex, tradeIndex, (trade) => ({
+        ...trade,
+        exit_reason: nextExitReason,
+        exit_time: isEodExitReason(nextExitReason) ? EOD_EXIT_TIME : trade.exit_time === EOD_EXIT_TIME ? '' : trade.exit_time,
+      }));
+
+      const matchingRule = findMatchingTransitionRule(
+        updatedDraft.legs[legIndex]?.trades[tradeIndex] ?? emptyTradeEntryDraft('CE'),
+        transitionRules,
+      );
+
+      return matchingRule ? applyTransitionRuleToDraft(updatedDraft, legIndex, tradeIndex, matchingRule) : updatedDraft;
+    });
+  }
+
   function moveCalendarYear(direction: -1 | 1) {
     const targetYear = visibleTradeYear + direction;
     const targetMonth = visibleTradeMonth ? Number(visibleTradeMonth.monthKey.slice(5, 7)) - 1 : 0;
@@ -2684,6 +2726,14 @@ function TradeModal({
     setCalendarView('months');
   }
 
+  function getEntryReasonOptions(selectedValue: string) {
+    return withSelectedReasonOption(entryReasons, selectedValue);
+  }
+
+  function getExitReasonOptions(selectedValue: string) {
+    return withSelectedReasonOption(exitReasons, selectedValue);
+  }
+
   if (!open) return null;
 
   return (
@@ -2696,7 +2746,36 @@ function TradeModal({
         </div>
 
         <div className="trade-modal-body">
-          {false ? (
+          <TradeEntryPage
+            embedded
+            onClose={onClose}
+            onSaveAndExit={onSaveAndExit}
+            saving={saving}
+            entryReasons={entryReasons}
+            exitReasons={exitReasons}
+            transitionRules={transitionRules}
+            tradeDates={tradeDates}
+            loadingCalendar={loadingCalendar}
+            draft={draft}
+            onUpdateDraft={onUpdateDraft}
+            onOpenSettings={onOpenSettings}
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="trade-modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="trade-modal" role="dialog" aria-modal="true" aria-label="Add leg" onClick={(event) => event.stopPropagation()}>
+        <div className="trade-modal-topbar">
+          <button className="button secondary trade-modal-close" type="button" onClick={onClose} aria-label="Close">
+            <CloseIcon />
+          </button>
+        </div>
+
+        <div className="trade-modal-body">
+          {flowStage === 'expiry' ? (
             <section className="trade-form-section trade-setup-section">
               <div className="trade-setup-heading" style={{ justifyContent: 'space-between', gap: '16px' }}>
                 <div className="trade-setup-brand">
@@ -3067,7 +3146,7 @@ function TradeModal({
                                   }
                                 >
                                   <option value="">Select entry reason</option>
-                                  {entryReasons.map((reason) => (
+                                  {getEntryReasonOptions(trade.entry_reason).map((reason) => (
                                     <option key={reason.id} value={reason.name}>
                                       {reason.name}
                                     </option>
@@ -3136,20 +3215,10 @@ function TradeModal({
                                   className="trade-theme-control"
                                   value={trade.exit_reason}
                                   disabled={!hasCompleteEntryDraft(trade) && !isExitStage}
-                                  onChange={(event) =>
-                                    updateTradeWithOptionalRule(activeLegIndex, tradeIndex, (currentTrade) => ({
-                                      ...currentTrade,
-                                      exit_reason: event.target.value,
-                                      exit_time: isEodExitReason(event.target.value)
-                                        ? EOD_EXIT_TIME
-                                        : currentTrade.exit_time === EOD_EXIT_TIME
-                                          ? ''
-                                          : currentTrade.exit_time,
-                                    }))
-                                  }
+                                  onChange={(event) => updateExitReasonWithTransition(activeLegIndex, tradeIndex, event.target.value)}
                                 >
                                   <option value="">Select exit reason</option>
-                                  {exitReasons.map((reason) => (
+                                  {getExitReasonOptions(trade.exit_reason).map((reason) => (
                                     <option key={reason.id} value={reason.name}>
                                       {reason.name}
                                     </option>
@@ -3222,21 +3291,22 @@ function TradeModal({
                             <div className="trade-transition-panel">
                               <div className="trade-transition-panel-copy">
                                 <strong>Transition rule matched</strong>
-                                <span>
-                                  {matchingRule.trigger_option} / {matchingRule.exit_reason}
-                                  {matchingRule.create_new_leg && matchingRule.new_leg_option
-                                    ? ` opens ${matchingRule.new_leg_option} with ${matchingRule.entry_reason ?? 'no entry reason'}`
-                                    : ' closes the current leg without opening a new one'}
-                                </span>
+                                <div className="trade-transition-panel-details">
+                                  <span>Trigger: {matchingRule.trigger_option}</span>
+                                  <span>Exit Reason: {matchingRule.exit_reason}</span>
+                                  <span>Other Leg Exit Reason: {matchingRule.other_leg_exit_reason ?? '-'}</span>
+                                  <span>New Leg Entry Reason: {matchingRule.entry_reason ?? '-'}</span>
+                                  <span>New Leg: {matchingRule.create_new_leg && matchingRule.new_leg_option ? matchingRule.new_leg_option : 'No'}</span>
+                                </div>
                               </div>
                               <button
                                 className="button secondary"
                                 type="button"
                                 onClick={() => {
-                                  onUpdateDraft((current) => applyTransitionRuleToDraft(current, activeLegIndex, matchingRule));
+                                  onUpdateDraft((current) => applyTransitionRuleToDraft(current, activeLegIndex, tradeIndex, matchingRule));
                                 }}
                               >
-                                Check Rule
+                                Apply Rule
                               </button>
                             </div>
                           ) : (
@@ -3588,42 +3658,41 @@ export function EMAIntradayTradePage() {
 
     let active = true;
     setLoadingCalendar(true);
+    setTradeDates([]);
 
-    const timer = window.setTimeout(() => {      void fetchTradeCalendar()
-        .then((calendar) => {
-          if (!active) return;
-          const timeline = getTradePerfTimeline();
-          const trace = calendar.trace;
-          timeline.__emaTradePerf = {
-            ...(timeline.__emaTradePerf ?? {}),
-            t2QueryStart: trace?.t2QueryStart,
-            t3ResponseReceived: trace?.t3ResponseReceived,
-            t4TransformComplete: trace?.t4TransformComplete,
-            rowsReturned: trace?.rowsReturned,
-            uniqueDatesReturned: trace?.uniqueDatesReturned,
-            duplicateRowsSkipped: trace?.duplicateRowsSkipped,
-            pageCount: trace?.pageCount,
-            query: trace?.query,
-            columns: trace?.columns,
-            orderBy: trace?.orderBy,
-            backendMs: trace?.backendMs,
-            transformMs: trace?.transformMs,
-            sourceTrace: trace,
-          };
-          setTradeDates(calendar.dates ?? []);
-        })
-        .catch(() => {
-          if (!active) return;
-          setTradeDates([]);
-        })
-        .finally(() => {
-          if (active) setLoadingCalendar(false);
-        });
-    }, 150);
+    void fetchTradeCalendar()
+      .then((calendar) => {
+        if (!active) return;
+        const timeline = getTradePerfTimeline();
+        const trace = calendar.trace;
+        timeline.__emaTradePerf = {
+          ...(timeline.__emaTradePerf ?? {}),
+          t2QueryStart: trace?.t2QueryStart,
+          t3ResponseReceived: trace?.t3ResponseReceived,
+          t4TransformComplete: trace?.t4TransformComplete,
+          rowsReturned: trace?.rowsReturned,
+          uniqueDatesReturned: trace?.uniqueDatesReturned,
+          duplicateRowsSkipped: trace?.duplicateRowsSkipped,
+          pageCount: trace?.pageCount,
+          query: trace?.query,
+          columns: trace?.columns,
+          orderBy: trace?.orderBy,
+          backendMs: trace?.backendMs,
+          transformMs: trace?.transformMs,
+          sourceTrace: trace,
+        };
+        setTradeDates(calendar.dates ?? []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTradeDates([]);
+      })
+      .finally(() => {
+        if (active) setLoadingCalendar(false);
+      });
 
     return () => {
       active = false;
-      window.clearTimeout(timer);
     };
   }, [open]);
   const tradeRows = useMemo(() => flattenTradeRows(records), [records]);
@@ -4585,7 +4654,7 @@ function TradeEntryPage({
       }));
 
       const matchingRule = findMatchingTransitionRule(updatedDraft.legs[currentCardIndex]?.trades[rowIndex] ?? emptyTradeEntryDraft('CE'), transitionRules);
-      const nextDraft = matchingRule ? applyTransitionRuleToDraft(updatedDraft, currentCardIndex, matchingRule) : updatedDraft;
+      const nextDraft = matchingRule ? applyTransitionRuleToDraft(updatedDraft, currentCardIndex, rowIndex, matchingRule) : updatedDraft;
 
       return draftToTradeCards(nextDraft);
     });
@@ -4866,7 +4935,7 @@ function TradeEntryPage({
                                   <div className="trade-select-shell">
                                     <select className="trade-select" value={row.entryReason} onChange={(event) => updateTradeRow(card.id, rowIndex, 'entryReason', event.target.value)}>
                                       <option value="">Select entry reason</option>
-                                      {entryReasons.map((reason) => (
+                                      {getEntryReasonOptions(entryReasons, row.entryReason).map((reason) => (
                                         <option key={reason.id} value={reason.name}>
                                           {reason.name}
                                         </option>
@@ -4895,7 +4964,7 @@ function TradeEntryPage({
                                       onChange={(event) => updateExitReasonWithTransition(card.id, rowIndex, event.target.value)}
                                     >
                                       <option value="">Select exit reason</option>
-                                      {exitReasons.map((reason) => (
+                                      {getExitReasonOptions(exitReasons, row.exitReason).map((reason) => (
                                         <option key={reason.id} value={reason.name}>
                                           {reason.name}
                                         </option>
