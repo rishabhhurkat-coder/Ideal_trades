@@ -2542,7 +2542,7 @@ export function TradeDashboardPage() {
     setEditingId(null);
     setSelectedTradeId(null);
     setDetailRow(null);
-    setFlowStage('expiry');
+    setFlowStage('entry');
     setDraft(emptyTradeDraft());
     setOpen(true);
   }
