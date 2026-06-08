@@ -1029,19 +1029,40 @@ input {
 }
 
 .trade-summary-card--value-only {
-  align-content: center;
+  align-content: stretch;
 }
 
 .trade-summary-card--value-only .trade-summary-value-wrap {
   height: 100%;
-  justify-content: center;
+  justify-content: stretch;
 }
 
 .trade-summary-card--value-only .trade-summary-pill {
+  display: flex;
   justify-content: center;
   width: 100%;
   min-height: 44px;
   border-radius: 8px;
+}
+
+.trade-summary-card--status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 72px;
+  padding: 0;
+  text-align: center;
+}
+
+.trade-summary-card--status .trade-summary-value {
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.15;
+  font-weight: 900;
+  letter-spacing: 0.01em;
 }
 
 .trade-summary-value {
@@ -1773,13 +1794,12 @@ input {
 }
 
 .trade-modal--expiry {
-  width: max-content;
+  width: min(100vw - 48px, 520px);
   height: auto;
-  max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   border: 1px solid #e3ddd2;
-  border-radius: 12px;
-  padding: 18px 18px 16px;
+  border-radius: 16px;
+  padding: 20px 20px 18px;
   box-shadow: 0 24px 70px rgba(16, 28, 40, 0.18);
 }
 
@@ -1795,6 +1815,7 @@ input {
 .trade-modal--expiry .trade-modal-footer {
   margin-top: 18px;
   padding-top: 14px;
+  justify-content: center;
 }
 
 .trade-modal--expiry .trade-setup-field > span {
@@ -2293,6 +2314,10 @@ input {
   line-height: 1.1;
 }
 
+.trade-page .trade-summary-card--value-only .trade-summary-pill {
+  width: 100%;
+}
+
 .trade-summary-pill.status-gap-up {
   color: #0f3d28;
   border: 1px solid #7eb894;
@@ -2318,6 +2343,36 @@ input {
 }
 
 .trade-summary-pill.status-near-ema {
+  color: #3c2e63;
+  border: 1px solid #b2a0da;
+  background: linear-gradient(180deg, #f3efff 0%, #e2d9f5 100%);
+}
+
+.trade-summary-card--status.status-gap-up {
+  color: #0f3d28;
+  border: 1px solid #7eb894;
+  background: linear-gradient(180deg, #e9f7ee 0%, #d4eddc 100%);
+}
+
+.trade-summary-card--status.status-gap-down {
+  color: #6f1f1f;
+  border: 1px solid #d49a9a;
+  background: linear-gradient(180deg, #fff0f0 0%, #f3d9d9 100%);
+}
+
+.trade-summary-card--status.status-no-gap {
+  color: #4b5563;
+  border: 1px solid #cdd5df;
+  background: linear-gradient(180deg, #f8fafc 0%, #e5e7eb 100%);
+}
+
+.trade-summary-card--status.status-far-ema {
+  color: #17375f;
+  border: 1px solid #8daed9;
+  background: linear-gradient(180deg, #eef6ff 0%, #d8e9fb 100%);
+}
+
+.trade-summary-card--status.status-near-ema {
   color: #3c2e63;
   border: 1px solid #b2a0da;
   background: linear-gradient(180deg, #f3efff 0%, #e2d9f5 100%);
@@ -2398,29 +2453,18 @@ input {
 
 .trade-date-layout {
   display: grid;
-  grid-template-columns: 335px 190px;
-  gap: 12px;
+  gap: 18px;
   align-items: start;
-  justify-content: center;
-}
-
-.trade-date-left-panel,
-.trade-date-side-panel {
-  min-width: 0;
+  justify-items: center;
+  width: 100%;
 }
 
 .trade-date-left-panel {
   display: grid;
-  gap: 6px;
-}
-
-.trade-date-side-panel {
-  display: grid;
-  gap: 6px;
-  align-content: start;
-  width: 190px;
-  padding-left: 14px;
-  border-left: 1px solid #ebe4d8;
+  gap: 10px;
+  justify-items: center;
+  width: min(100%, 520px);
+  min-width: 0;
 }
 
 .trade-date-toolbar {
@@ -2434,23 +2478,23 @@ input {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 5px;
+  gap: 6px;
   flex-wrap: nowrap;
 }
 
 .trade-date-nav-button,
 .trade-date-icon-button,
 .trade-date-view-button {
-  min-height: 37px;
-  border-radius: 7px;
-  padding: 0 10px;
-  font-size: 11px;
+  min-height: 46px;
+  border-radius: 9px;
+  padding: 0 13px;
+  font-size: 14px;
 }
 
 .trade-date-icon-button {
-  width: 38px;
+  width: 48px;
   padding: 0;
-  font-size: 20px;
+  font-size: 25px;
   line-height: 1;
 }
 
@@ -2462,12 +2506,13 @@ input {
 
 .trade-date-calendar-shell {
   display: grid;
-  gap: 8px;
-  width: 335px;
+  gap: 12px;
+  width: min(100%, 520px);
   border: 1px solid #e4e9e5;
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 14px;
+  padding: 16px 18px 18px;
   background: linear-gradient(180deg, #ffffff 0%, #fbf8f2 100%);
+  justify-self: center;
 }
 
 .trade-date-calendar-view,
@@ -2475,6 +2520,7 @@ input {
 .trade-date-year-selector {
   display: grid;
   gap: 12px;
+  width: 100%;
 }
 
 .trade-date-month-heading {
@@ -2496,7 +2542,7 @@ input {
 .trade-date-days {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 5px 7px;
+  gap: 8px 9px;
 }
 
 .trade-date-weekdays span {
@@ -2510,9 +2556,9 @@ input {
 .trade-date-day {
   display: grid;
   place-items: center;
-  min-height: 40px;
+  min-height: 52px;
   border: 1px solid #e5e2dc;
-  border-radius: 7px;
+  border-radius: 9px;
   padding: 0;
   color: #929896;
   background: #f5f5f3;
@@ -2679,14 +2725,6 @@ input {
   white-space: pre-line;
   line-height: 1.2;
   font-size: 12px;
-  text-align: center;
-}
-
-.trade-date-side-panel .trade-status-control {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 42px;
   text-align: center;
 }
 
