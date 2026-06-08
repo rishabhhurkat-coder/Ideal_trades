@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { type CSSProperties, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { readTradeCalendar as readSupabaseTradeCalendar } from '../../../Helper/Supabase/emaIntradayHistorical';
 import { supabase } from '../../../Helper/Supabase/supabaseClient';
 import { fetchEntryReasons, fetchExitReasons, fetchTradeTransitionRules } from '../Masters/mastersService';
 import type { EntryReason, ExitReason, TradeTransitionRule } from '../Masters/masters';
+import { TradeDateCalendar } from './TradeDateCalendar';
 
 export type TradeOption = 'CE' | 'PE';
 
@@ -35,11 +37,15 @@ export type TradeEntryDraft = {
 
 export type TradeLegRecord = {
   leg_no: number;
+  created_from_leg_no: number | null;
+  trigger_exit_reason: string;
   trades: TradeEntryRecord[];
 };
 
 export type TradeLegDraft = {
   leg_no: number;
+  created_from_leg_no: number | null;
+  trigger_exit_reason: string;
   trades: TradeEntryDraft[];
 };
 
@@ -76,6 +82,17 @@ export type TradeCalendarResponse = {
   message?: string;
 };
 
+type OptionSeriesStrikeOption = {
+  strike: string;
+  close: number | null;
+};
+
+type OptionSeriesStrikeResponse = {
+  status: 'success' | 'error';
+  rows?: OptionSeriesStrikeOption[];
+  message?: string;
+};
+
 export type TradeRecord = {
   id: string;
   trade_date: string;
@@ -97,9 +114,10 @@ export type TradeRecordDraft = {
   legs: TradeLegDraft[];
 };
 
-const DEFAULT_TRADE_QUANTITY = '75';
+const DEFAULT_TRADE_QUANTITY = '130';
 const EOD_EXIT_TIME = '15:30';
 const TRADE_DASHBOARD_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
+const HIDDEN_REASON_NAMES = new Set(['CE SL Trigger', 'PE SL Trigger', 'Manual Entry']);
 let tradeCalendarRequestCount = 0;
 
 function nowIso() {
@@ -136,6 +154,8 @@ function emptyTradeEntryDraft(option: TradeOption = 'CE'): TradeEntryDraft {
 function emptyTradeLegDraft(legNo: number): TradeLegDraft {
   return {
     leg_no: legNo,
+    created_from_leg_no: null,
+    trigger_exit_reason: '',
     trades: [emptyTradeEntryDraft('CE')],
   };
 }
@@ -163,6 +183,10 @@ function computePl(entryPrice: number | null, exitPrice: number | null, quantity
   const points = computePoints(entryPrice, exitPrice);
   if (points === null || quantity === null) return null;
   return Number((points * quantity).toFixed(2));
+}
+
+function computeRowPnl(entryPrice: string, exitPrice: string, quantity: string) {
+  return computePl(parseNumberOrNull(entryPrice), parseNumberOrNull(exitPrice), parseNumberOrNull(quantity));
 }
 
 function hasDraftTradeContent(trade: TradeEntryDraft) {
@@ -248,6 +272,9 @@ function normalizeLoadedLeg(item: any, fallbackLegNo: number): TradeLegRecord | 
     if (trades.length === 0) return null;
     return {
       leg_no: Number.isFinite(item.leg_no) ? Number(item.leg_no) : fallbackLegNo,
+      created_from_leg_no:
+        typeof item.created_from_leg_no === 'number' && Number.isFinite(item.created_from_leg_no) ? Number(item.created_from_leg_no) : null,
+      trigger_exit_reason: typeof item.trigger_exit_reason === 'string' ? item.trigger_exit_reason : '',
       trades,
     };
   }
@@ -269,6 +296,9 @@ function normalizeLoadedLeg(item: any, fallbackLegNo: number): TradeLegRecord | 
   if (!legacyTrade) return null;
   return {
     leg_no: Number.isFinite(item.leg_no) ? Number(item.leg_no) : fallbackLegNo,
+    created_from_leg_no:
+      typeof item.created_from_leg_no === 'number' && Number.isFinite(item.created_from_leg_no) ? Number(item.created_from_leg_no) : null,
+    trigger_exit_reason: typeof item.trigger_exit_reason === 'string' ? item.trigger_exit_reason : '',
     trades: [legacyTrade],
   };
 }
@@ -302,6 +332,8 @@ function normalizeLegacyRecord(item: any): TradeRecord | null {
     if (fallbackTrade) {
       legs.push({
         leg_no: 1,
+        created_from_leg_no: null,
+        trigger_exit_reason: '',
         trades: [fallbackTrade],
       });
     }
@@ -420,6 +452,9 @@ function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
       return trades.length > 0
         ? {
             leg_no: Number.isFinite(leg.leg_no) ? Number(leg.leg_no) : index + 1,
+            created_from_leg_no:
+              typeof leg.created_from_leg_no === 'number' && Number.isFinite(leg.created_from_leg_no) ? Number(leg.created_from_leg_no) : null,
+            trigger_exit_reason: typeof leg.trigger_exit_reason === 'string' ? leg.trigger_exit_reason : '',
             trades,
           }
         : null;
@@ -683,13 +718,58 @@ function createEmptyColumnFilters(): ColumnFilterMap {
 }
 
 function formatCurrency(value: number) {
-  return `â‚¹${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `\u20B9 ${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatSignedCurrency(value: number) {
   const sign = value < 0 ? '-' : '';
   return `${sign}${formatCurrency(value)}`;
 }
+
+type PnlTone = 'positive' | 'negative' | 'neutral';
+
+function getPnlTone(value: number | null | undefined): PnlTone {
+  if (value === null || value === undefined || value === 0) return 'neutral';
+  return value > 0 ? 'positive' : 'negative';
+}
+
+function getPnlColor(value: number | null | undefined) {
+  switch (getPnlTone(value)) {
+    case 'positive':
+      return '#18833c';
+    case 'negative':
+      return '#d93e16';
+    default:
+      return '#5f6d69';
+  }
+}
+
+function getPnlTextStyle(value: number | null | undefined, emphasis = false): CSSProperties {
+  return {
+    display: 'block',
+    color: getPnlColor(value),
+    fontWeight: 900,
+    fontSize: emphasis ? '16px' : '14px',
+    lineHeight: 1.1,
+    letterSpacing: '0.01em',
+  };
+}
+
+const CENTERED_SUMMARY_CARD_STYLE: CSSProperties = {
+  textAlign: 'center',
+  placeItems: 'center',
+};
+
+const CENTERED_SUMMARY_VALUE_WRAP_STYLE: CSSProperties = {
+  justifyContent: 'center',
+  width: '100%',
+};
+
+const CENTERED_SUMMARY_VALUE_STYLE: CSSProperties = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'center',
+};
 
 function formatDashboardNumber(value: number | null) {
   if (value === null) return '-';
@@ -798,7 +878,7 @@ function TradeDashboardSettingsModal({ open, settings, onClose, onSave }: TradeD
         <div className="trade-settings-modal-header">
           <div className="trade-settings-modal-title">
             <span>Dashboard</span>
-            <h2 id="trade-dashboard-settings-title">Trade Dashboard Settings</h2>
+            <h2 id="trade-dashboard-settings-title">Leg Dashboard Settings</h2>
           </div>
           <button className="button secondary trade-settings-close" type="button" onClick={onClose} aria-label="Close settings">
             âœ•
@@ -895,20 +975,26 @@ function CalendarChevronIcon({ direction }: { direction: 'left' | 'right' | 'dow
   );
 }
 
-const TIME_DATALIST_ID = 'trade-time-options';
-const EOD_EXIT_TIME = '15:30';
-const TIME_OPTIONS = Array.from({ length: ((15 * 60 + 30) - (9 * 60 + 18)) / 3 + 1 }, (_, index) => {
+type TimeOption = {
+  value: string;
+  label: string;
+  compact: string;
+  hour: string;
+};
+
+const TIME_OPTIONS: TimeOption[] = Array.from({ length: ((15 * 60 + 30) - (9 * 60 + 18)) / 3 + 1 }, (_, index) => {
   const totalMinutes = 9 * 60 + 18 + index * 3;
   const hour = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
   const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-  const label = `${hour}.${String(minute).padStart(2, '0')}`;
-  return { value, label };
+  return {
+    value,
+    label: value,
+    compact: value.replace(':', ''),
+    hour: String(hour).padStart(2, '0'),
+  };
 });
-
-function oppositeOption(option: TradeOption): TradeOption {
-  return option === 'CE' ? 'PE' : 'CE';
-}
+const TIME_CANONICAL_VALUES = new Set(TIME_OPTIONS.map((timeOption) => timeOption.value));
 
 function formatPrice(value: number | null) {
   return value === null ? '-' : value.toFixed(2);
@@ -918,7 +1004,7 @@ function formatTimeDisplay(value: string) {
   if (!value) return '-' ;
   const [hour, minute] = value.split(':');
   if (!hour || !minute) return value;
-  return `${String(Number(hour))}.${minute}`;
+  return `${String(Number(hour)).padStart(2, '0')}:${minute}`;
 }
 
 function parseNumberOrNull(value: string) {
@@ -969,6 +1055,690 @@ function parseTimeToMinutes(value: string) {
   const minute = Number(minuteRaw);
   if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null;
   return hour * 60 + minute;
+}
+
+function normalizeCandleTimeInput(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return '';
+
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 3) {
+    const canonical = `0${digits.slice(0, 1)}:${digits.slice(1)}`;
+    return TIME_CANONICAL_VALUES.has(canonical) ? canonical : null;
+  }
+
+  if (digits.length === 4) {
+    const canonical = `${digits.slice(0, 2)}:${digits.slice(2)}`;
+    return TIME_CANONICAL_VALUES.has(canonical) ? canonical : null;
+  }
+
+  return null;
+}
+
+function isPotentialCandleTimeInput(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return true;
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return false;
+  return TIME_OPTIONS.some((timeOption) => timeOption.compact.includes(digits));
+}
+
+function rankTimeOption(rawValue: string, timeOption: TimeOption) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return 0;
+
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return null;
+
+  const queryVariants = digits.length === 1 ? [digits, digits.padStart(2, '0')] : [digits];
+
+  if (queryVariants.some((query) => query.length <= 2 && timeOption.hour.startsWith(query))) {
+    return 0;
+  }
+
+  if (queryVariants.some((query) => timeOption.compact.startsWith(query))) {
+    return 1;
+  }
+
+  if (queryVariants.some((query) => timeOption.compact.includes(query))) {
+    return 2;
+  }
+
+  return null;
+}
+
+function isTimeOptionAfterMin(timeOption: TimeOption, minimumValue?: string) {
+  if (!minimumValue) return true;
+  const normalizedMinimum = normalizeCandleTimeInput(minimumValue);
+  if (!normalizedMinimum) return true;
+  return timeOption.value > normalizedMinimum;
+}
+
+function getTimeSuggestions(rawValue: string, minimumValue?: string) {
+  const ranked = TIME_OPTIONS
+    .map((timeOption, index) => {
+      if (!isTimeOptionAfterMin(timeOption, minimumValue)) return null;
+      const rank = rankTimeOption(rawValue, timeOption);
+      return rank === null ? null : { timeOption, rank, index };
+    })
+    .filter((entry): entry is { timeOption: TimeOption; rank: number; index: number } => entry !== null)
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((entry) => entry.timeOption);
+
+  if (ranked.length > 0) {
+    return ranked.slice(0, 10);
+  }
+
+  return rawValue.trim() ? [] : TIME_OPTIONS.slice(0, 10);
+}
+
+function getOptionSeriesLookupKey(tradeDate: string, expiry: string, option: TradeOption, time: string) {
+  return [tradeDate.trim(), expiry.trim(), option, time.trim()].join('|');
+}
+
+function formatStrikeValueForDisplay(value: string) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && Number.isInteger(parsed)) {
+    return String(parsed);
+  }
+  return value;
+}
+
+function normalizeOptionSeriesStrikeValues(rows: unknown[]) {
+  const entries = new Map<string, number | null>();
+
+  rows.forEach((row) => {
+    if (!row || typeof row !== 'object') return;
+    const strikeValue = toNumberOrNull(String((row as { strike?: unknown }).strike ?? ''));
+    if (strikeValue === null) return;
+    const closeValue = toNumberOrNull(String((row as { close?: unknown }).close ?? ''));
+    const strikeKey = String(strikeValue);
+    if (!entries.has(strikeKey)) {
+      entries.set(strikeKey, closeValue);
+    }
+  });
+
+  return Array.from(entries.entries())
+    .map(([strike, close]) => ({ strike, close }))
+    .sort((left, right) => Number(left.strike) - Number(right.strike));
+}
+
+function rankStrikeOption(strikeOption: OptionSeriesStrikeOption) {
+  const close = strikeOption.close;
+  const closePriority = close !== null && close >= 15 && close <= 30 ? 0 : 1;
+  const distanceFromTwenty = close === null ? Number.POSITIVE_INFINITY : Math.abs(close - 20);
+  return {
+    closePriority,
+    distanceFromTwenty,
+    strike: Number(strikeOption.strike),
+  };
+}
+
+function getStrikeSuggestions(rawValue: string, options: OptionSeriesStrikeOption[]) {
+  const ranked = options
+    .map((option, index) => {
+      const rank = rankStrikeOption(option);
+      const query = rawValue.trim().replace(/\D/g, '');
+      const strikeDigits = option.strike.replace(/\D/g, '');
+      const queryMatch = query ? (strikeDigits.startsWith(query) || strikeDigits.includes(query) ? 0 : 1) : 0;
+      return { option, rank, index, queryMatch };
+    })
+    .sort(
+      (left, right) =>
+        left.queryMatch - right.queryMatch ||
+        left.rank.closePriority - right.rank.closePriority ||
+        left.rank.distanceFromTwenty - right.rank.distanceFromTwenty ||
+        left.rank.strike - right.rank.strike ||
+        left.index - right.index,
+    )
+    .map((entry) => entry.option);
+  return ranked;
+}
+
+function getTopRankedStrikeOption(options: OptionSeriesStrikeOption[]) {
+  return getStrikeSuggestions('', options)[0] ?? null;
+}
+
+async function readOptionSeriesStrikes(
+  tradeDate: string,
+  expiry: string,
+  option: TradeOption,
+  time: string,
+): Promise<OptionSeriesStrikeResponse> {
+  if (!tradeDate.trim() || !expiry.trim() || !time.trim()) {
+    return {
+      status: 'success',
+      rows: [],
+    };
+  }
+
+  const { data, error } = await supabase
+    .schema('emaintraday')
+    .from('option_series')
+    .select('strike,close')
+    .eq('trade_date', tradeDate.trim())
+    .eq('expiry', expiry.trim())
+    .eq('option_type', option)
+    .eq('candle_time', time.trim())
+    .order('strike', { ascending: true });
+
+  if (error) {
+    return {
+      status: 'error',
+      message: error.message ?? 'Unable to load option series strikes from Supabase.',
+    };
+  }
+
+  return {
+    status: 'success',
+    rows: normalizeOptionSeriesStrikeValues(Array.isArray(data) ? data : []),
+  };
+}
+
+type TimeInputFieldProps = {
+  value: string;
+  placeholder?: string;
+  inputClassName: string;
+  disabled?: boolean;
+  readOnly?: boolean;
+  inputMode?: 'numeric';
+  ariaLabel?: string;
+  minimumValue?: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+};
+
+function TimeInputField({
+  value,
+  placeholder,
+  inputClassName,
+  disabled = false,
+  readOnly = false,
+  inputMode = 'numeric',
+  ariaLabel,
+  minimumValue,
+  onChange,
+  onBlur,
+}: TimeInputFieldProps) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [overlayStyle, setOverlayStyle] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+  const suggestions = useMemo(() => getTimeSuggestions(value, minimumValue), [minimumValue, value]);
+  const isNormalized = normalizeCandleTimeInput(value) !== null;
+  const normalizedMinimumValue = normalizeCandleTimeInput(minimumValue ?? '');
+  const isBelowMinimum = Boolean(
+    isNormalized && normalizedMinimumValue && value <= normalizedMinimumValue,
+  );
+  const isInvalid =
+    value.trim() !== '' &&
+    (!isNormalized || !isPotentialCandleTimeInput(value) || isBelowMinimum);
+  const hasSuggestions = !disabled && !readOnly && suggestions.length > 0 && isOpen;
+  const activeSuggestion = hasSuggestions ? suggestions[activeIndex] ?? suggestions[0] ?? null : null;
+  const listboxId = `${inputId}-listbox`;
+
+  useLayoutEffect(() => {
+    if (!isOpen || disabled || readOnly) {
+      setOverlayStyle(null);
+      return;
+    }
+
+    const syncPosition = () => {
+      const element = inputRef.current;
+      if (!element) return;
+
+      const rect = element.getBoundingClientRect();
+      setOverlayStyle({
+        left: rect.left,
+        top: rect.bottom + 8,
+        width: rect.width,
+      });
+    };
+
+    syncPosition();
+    window.addEventListener('resize', syncPosition);
+    window.addEventListener('scroll', syncPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', syncPosition);
+      window.removeEventListener('scroll', syncPosition, true);
+    };
+  }, [disabled, isOpen, readOnly, suggestions.length]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setActiveIndex(0);
+      return;
+    }
+
+    setActiveIndex(0);
+  }, [isOpen, value]);
+
+  function commitSuggestion(timeOption: TimeOption) {
+    onChange(timeOption.value);
+    setIsOpen(false);
+    setActiveIndex(0);
+  }
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+      }}
+    >
+      <input
+        ref={inputRef}
+        id={inputId}
+        className={inputClassName}
+        type="text"
+        inputMode={inputMode}
+        aria-label={ariaLabel}
+        aria-autocomplete="list"
+        aria-expanded={hasSuggestions}
+        aria-haspopup="listbox"
+        aria-controls={hasSuggestions ? listboxId : undefined}
+        aria-activedescendant={hasSuggestions && activeSuggestion ? `${listboxId}-${activeIndex}` : undefined}
+        placeholder={placeholder}
+        readOnly={readOnly}
+        disabled={disabled}
+        value={value}
+        onMouseDown={() => {
+          if (disabled || readOnly) return;
+          setIsOpen(true);
+        }}
+        onFocus={() => {
+          if (disabled || readOnly) return;
+          setIsOpen(true);
+        }}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          onChange(nextValue);
+          if (normalizeCandleTimeInput(nextValue) !== null) {
+            setIsOpen(false);
+            setActiveIndex(0);
+            return;
+          }
+
+          setIsOpen(true);
+        }}
+        onBlur={() => {
+          setIsOpen(false);
+          setActiveIndex(0);
+          onBlur();
+        }}
+        onKeyDown={(event) => {
+          if (!hasSuggestions) {
+            if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !disabled && !readOnly) {
+              event.preventDefault();
+              setIsOpen(true);
+            }
+            return;
+          }
+
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActiveIndex((current) => (current + 1) % suggestions.length);
+            return;
+          }
+
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+            return;
+          }
+
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const selected = suggestions[activeIndex] ?? suggestions[0];
+            if (selected) {
+              commitSuggestion(selected);
+            }
+            return;
+          }
+
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setIsOpen(false);
+            setActiveIndex(0);
+          }
+        }}
+        style={
+          isInvalid
+            ? {
+                borderColor: 'rgba(216, 110, 96, 0.92)',
+                backgroundColor: 'rgba(216, 110, 96, 0.08)',
+                boxShadow: 'inset 0 0 0 1px rgba(216, 110, 96, 0.08)',
+                paddingRight: '2rem',
+              }
+            : undefined
+        }
+      />
+      {isInvalid ? (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            right: '0.55rem',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            width: '1rem',
+            height: '1rem',
+            borderRadius: '999px',
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: '0.7rem',
+            lineHeight: 1,
+            color: 'rgba(216, 110, 96, 0.95)',
+            background: 'rgba(216, 110, 96, 0.12)',
+            border: '1px solid rgba(216, 110, 96, 0.28)',
+            pointerEvents: 'none',
+          }}
+        >
+          !
+        </span>
+      ) : null}
+      {hasSuggestions ? (
+        createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1200,
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              id={listboxId}
+              role="listbox"
+              style={{
+                position: 'fixed',
+                left: overlayStyle?.left ?? 0,
+                top: overlayStyle?.top ?? 0,
+                width: overlayStyle?.width ?? 0,
+                maxHeight: 'none',
+                overflowY: 'visible',
+                borderRadius: '1rem',
+                border: '1px solid rgba(226, 193, 135, 0.45)',
+                background: 'linear-gradient(180deg, rgba(255, 251, 245, 0.98) 0%, rgba(251, 244, 232, 0.98) 100%)',
+                boxShadow: '0 20px 40px rgba(88, 67, 34, 0.16)',
+                padding: '0.45rem',
+                backdropFilter: 'blur(8px)',
+                pointerEvents: 'auto',
+              }}
+            >
+              {suggestions.map((timeOption, index) => {
+                const isActive = index === activeIndex;
+
+                return (
+                  <div
+                    key={timeOption.value}
+                    id={`${listboxId}-${index}`}
+                    role="option"
+                    aria-selected={isActive}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      commitSuggestion(timeOption);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem',
+                      padding: '0.58rem 0.8rem',
+                      borderRadius: '0.75rem',
+                      color: 'rgba(69, 52, 31, 0.96)',
+                      cursor: 'pointer',
+                      backgroundColor: isActive ? 'rgba(246, 183, 107, 0.22)' : 'rgba(255, 255, 255, 0.72)',
+                      boxShadow: isActive ? 'inset 0 0 0 1px rgba(196, 137, 51, 0.28)' : 'inset 0 0 0 1px rgba(224, 210, 188, 0.42)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    <span>{timeOption.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>,
+          document.body,
+        )
+      ) : null}
+    </div>
+  );
+}
+
+type StrikeInputFieldProps = {
+  value: string;
+  options: OptionSeriesStrikeOption[];
+  placeholder?: string;
+  inputClassName: string;
+  disabled?: boolean;
+  readOnly?: boolean;
+  ariaLabel?: string;
+  onChange: (value: string) => void;
+  onSelectOption: (option: OptionSeriesStrikeOption) => void;
+  onBlur: () => void;
+};
+
+function StrikeInputField({
+  value,
+  options,
+  placeholder,
+  inputClassName,
+  disabled = false,
+  readOnly = false,
+  ariaLabel,
+  onChange,
+  onSelectOption,
+  onBlur,
+}: StrikeInputFieldProps) {
+  const inputId = useId();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [overlayStyle, setOverlayStyle] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+  const suggestions = useMemo(() => getStrikeSuggestions(value, options), [options, value]);
+  const hasSuggestions = !disabled && !readOnly && suggestions.length > 0 && isOpen;
+  const activeSuggestion = hasSuggestions ? suggestions[activeIndex] ?? suggestions[0] ?? null : null;
+  const listboxId = `${inputId}-listbox`;
+
+  useLayoutEffect(() => {
+    if (!isOpen || disabled || readOnly) {
+      setOverlayStyle(null);
+      return;
+    }
+
+    const syncPosition = () => {
+      const element = inputRef.current;
+      if (!element) return;
+
+      const rect = element.getBoundingClientRect();
+      setOverlayStyle({
+        left: rect.left,
+        top: rect.bottom + 8,
+        width: rect.width,
+      });
+    };
+
+    syncPosition();
+    window.addEventListener('resize', syncPosition);
+    window.addEventListener('scroll', syncPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', syncPosition);
+      window.removeEventListener('scroll', syncPosition, true);
+    };
+  }, [disabled, isOpen, readOnly, suggestions.length]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setActiveIndex(0);
+      return;
+    }
+
+    setActiveIndex(0);
+  }, [isOpen, value]);
+
+  function commitSuggestion(strikeOption: OptionSeriesStrikeOption) {
+    onSelectOption(strikeOption);
+    setIsOpen(false);
+    setActiveIndex(0);
+  }
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+      }}
+    >
+      <input
+        ref={inputRef}
+        id={inputId}
+        className={inputClassName}
+        type="text"
+        inputMode="numeric"
+        aria-label={ariaLabel}
+        aria-autocomplete="list"
+        aria-expanded={hasSuggestions}
+        aria-haspopup="listbox"
+        aria-controls={hasSuggestions ? listboxId : undefined}
+        aria-activedescendant={hasSuggestions && activeSuggestion ? `${listboxId}-${activeIndex}` : undefined}
+        placeholder={placeholder}
+        readOnly={readOnly}
+        disabled={disabled}
+        value={value}
+        onFocus={() => {
+          if (disabled || readOnly) return;
+          setIsOpen(true);
+        }}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setIsOpen(true);
+        }}
+        onBlur={() => {
+          setIsOpen(false);
+          setActiveIndex(0);
+          onBlur();
+        }}
+        onKeyDown={(event) => {
+          if (!hasSuggestions) {
+            if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !disabled && !readOnly) {
+              event.preventDefault();
+              setIsOpen(true);
+            }
+            return;
+          }
+
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setActiveIndex((current) => (current + 1) % suggestions.length);
+            return;
+          }
+
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setActiveIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+            return;
+          }
+
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const selected = suggestions[activeIndex] ?? suggestions[0];
+            if (selected) {
+              commitSuggestion(selected);
+            }
+            return;
+          }
+
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setIsOpen(false);
+            setActiveIndex(0);
+          }
+        }}
+      />
+      {hasSuggestions ? (
+        createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 1200,
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              id={listboxId}
+              role="listbox"
+              style={{
+                position: 'fixed',
+                left: overlayStyle?.left ?? 0,
+                top: overlayStyle?.top ?? 0,
+                width: overlayStyle?.width ?? 0,
+                maxHeight: '14rem',
+                overflowY: 'auto',
+                borderRadius: '1rem',
+                border: '1px solid rgba(226, 193, 135, 0.45)',
+                background: 'linear-gradient(180deg, rgba(255, 251, 245, 0.98) 0%, rgba(251, 244, 232, 0.98) 100%)',
+                boxShadow: '0 20px 40px rgba(88, 67, 34, 0.16)',
+                padding: '0.45rem',
+                backdropFilter: 'blur(8px)',
+                pointerEvents: 'auto',
+              }}
+            >
+              {suggestions.map((strikeOption, index) => {
+                const isActive = index === activeIndex;
+                return (
+                  <div
+                    key={`${strikeOption.strike}-${index}`}
+                    id={`${listboxId}-${index}`}
+                    role="option"
+                    aria-selected={isActive}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      commitSuggestion(strikeOption);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem',
+                      padding: '0.58rem 0.8rem',
+                      borderRadius: '0.75rem',
+                      color: 'rgba(69, 52, 31, 0.96)',
+                      cursor: 'pointer',
+                      backgroundColor: isActive ? 'rgba(246, 183, 107, 0.22)' : 'rgba(255, 255, 255, 0.72)',
+                      boxShadow: isActive ? 'inset 0 0 0 1px rgba(196, 137, 51, 0.28)' : 'inset 0 0 0 1px rgba(224, 210, 188, 0.42)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    <span>{`${formatStrikeValueForDisplay(strikeOption.strike)} | ${formatPrice(strikeOption.close)}`}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>,
+          document.body,
+        )
+      ) : null}
+    </div>
+  );
+}
+
+function createTimeDraftKey(cardId: string, rowIndex: number, field: 'entryTime' | 'exitTime') {
+  return `${cardId}:${rowIndex}:${field}`;
 }
 
 function hasCompleteEntryDraft(trade: TradeEntryDraft) {
@@ -1058,7 +1828,7 @@ function formatMonthLabel(date: Date) {
 }
 
 function formatSelectedDateDisplay(dateKey: string) {
-  if (!dateKey) return 'Select a trade date';
+  if (!dateKey) return 'Select a trade day';
   const parsed = parseCalendarDate(dateKey);
   if (!parsed) return dateKey;
   const weekday = new Intl.DateTimeFormat('en-US', {
@@ -1208,6 +1978,17 @@ function createTransitionTrade(option: TradeOption, entryReason: string | null) 
   };
 }
 
+function shiftLegMetadata(leg: TradeLegDraft, shiftFromLegNo: number, delta: number): TradeLegDraft {
+  return {
+    ...leg,
+    leg_no: leg.leg_no >= shiftFromLegNo ? leg.leg_no + delta : leg.leg_no,
+    created_from_leg_no:
+      leg.created_from_leg_no !== null && leg.created_from_leg_no >= shiftFromLegNo
+        ? leg.created_from_leg_no + delta
+        : leg.created_from_leg_no,
+  };
+}
+
 function applyTransitionRuleToDraft(
   draft: TradeRecordDraft,
   legIndex: number,
@@ -1269,16 +2050,13 @@ function applyTransitionRuleToDraft(
   }
 
   const nextLegs = updatedLegs.map((leg) =>
-    leg.leg_no >= nextLegNo
-      ? {
-          ...leg,
-          leg_no: leg.leg_no + 1,
-        }
-      : leg,
+    shiftLegMetadata(leg, nextLegNo, 1),
   );
 
   const nextLeg: TradeLegDraft = {
     leg_no: nextLegNo,
+    created_from_leg_no: currentLeg.leg_no,
+    trigger_exit_reason: rule.exit_reason,
     trades: [createTransitionTrade(rule.new_leg_option, rule.entry_reason)],
   };
 
@@ -1303,6 +2081,8 @@ function toDraftFromRecord(record: TradeRecord): TradeRecordDraft {
       record.legs.length > 0
         ? record.legs.map((leg) => ({
             leg_no: leg.leg_no,
+            created_from_leg_no: leg.created_from_leg_no ?? null,
+            trigger_exit_reason: leg.trigger_exit_reason ?? '',
             trades: leg.trades.map((trade) => ({
               id: trade.id,
               option: trade.option,
@@ -1566,10 +2346,7 @@ function removeLeg(draft: TradeRecordDraft, legIndex: number) {
     ...draft,
     legs:
       nextLegs.length > 0
-        ? nextLegs.map((leg, index) => ({
-            ...leg,
-            leg_no: index + 1,
-          }))
+        ? nextLegs.map((leg) => shiftLegMetadata(leg, legIndex + 2, -1))
         : [createLegDraft(1)],
   };
 }
@@ -1590,7 +2367,6 @@ function TradeModal({
   onUpdateDraft,
   onSave,
   onSaveAndExit,
-  onBackToEntry,
   onOpenSettings,
 }: {
   draft: TradeRecordDraft;
@@ -1608,10 +2384,10 @@ function TradeModal({
   onUpdateDraft: (updater: (current: TradeRecordDraft) => TradeRecordDraft) => void;
   onSave: () => void;
   onSaveAndExit: () => void;
-  onBackToEntry: () => void;
   onOpenSettings: () => void;
 }) {
   const [activeLegIndex, setActiveLegIndex] = useState(0);
+  const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({});
   const tradeCalendarMonths = useMemo(() => {
     const startedAt = performance.now();
     const months = buildTradeDateCalendar(tradeDates);
@@ -1637,6 +2413,53 @@ function TradeModal({
     const foundIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === monthKey);
     return foundIndex >= 0 ? foundIndex : Math.max(tradeCalendarMonths.length - 1, 0);
   }, [latestTradeDateOption, tradeCalendarMonths]);
+
+  function handleTimeDraftChange(
+    tradeIndex: number,
+    field: 'entry_time' | 'exit_time',
+    value: string,
+  ) {
+    const key = createTimeDraftKey(activeLeg?.trades[tradeIndex]?.id ?? `trade-${tradeIndex}`, tradeIndex, field === 'entry_time' ? 'entryTime' : 'exitTime');
+    const normalized = normalizeCandleTimeInput(value);
+    if (normalized !== null) {
+      setTimeDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      onUpdateDraft((current) =>
+        updateTradeInLeg(current, activeLegIndex, tradeIndex, (trade) => ({
+          ...trade,
+          [field]: normalized,
+        })),
+      );
+      return;
+    }
+
+    setTimeDrafts((current) => ({ ...current, [key]: value }));
+  }
+
+  function handleTimeDraftBlur(tradeIndex: number, field: 'entry_time' | 'exit_time') {
+    const key = createTimeDraftKey(activeLeg?.trades[tradeIndex]?.id ?? `trade-${tradeIndex}`, tradeIndex, field === 'entry_time' ? 'entryTime' : 'exitTime');
+    const draftValue = timeDrafts[key];
+    if (draftValue === undefined) return;
+
+    const normalized = normalizeCandleTimeInput(draftValue);
+    if (normalized !== null) {
+      onUpdateDraft((current) =>
+        updateTradeInLeg(current, activeLegIndex, tradeIndex, (trade) => ({
+          ...trade,
+          [field]: normalized,
+        })),
+      );
+      setTimeDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -1865,7 +2688,7 @@ function TradeModal({
 
   return (
     <div className="trade-modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="trade-modal" role="dialog" aria-modal="true" aria-label="Add trade" onClick={(event) => event.stopPropagation()}>
+      <div className="trade-modal" role="dialog" aria-modal="true" aria-label="Add leg" onClick={(event) => event.stopPropagation()}>
         <div className="trade-modal-topbar">
           <button className="button secondary trade-modal-close" type="button" onClick={onClose} aria-label="Close">
             <CloseIcon />
@@ -1880,7 +2703,7 @@ function TradeModal({
                   <div className="trade-setup-icon">
                     <ExpiryHeaderIcon />
                   </div>
-                  <h4>Trade Date Calendar</h4>
+                  <h4>Trade Day Calendar</h4>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexShrink: 0 }}>
                   <button className="button secondary trade-settings-button" type="button" onClick={onOpenSettings} aria-label="Open trade dashboard settings">
@@ -2018,7 +2841,7 @@ function TradeModal({
                     ) : (
                       <div className="trade-date-calendar-view">
                         <button type="button" className="trade-date-month-heading" onClick={() => setCalendarView('months')}>
-                          <span>{visibleTradeMonth?.label ?? 'Trade Date Calendar'}</span>
+                        <span>{visibleTradeMonth?.label ?? 'Trade Day Calendar'}</span>
                           <CalendarChevronIcon direction="down" />
                         </button>
                         <div className="trade-date-weekdays">
@@ -2060,7 +2883,7 @@ function TradeModal({
                               );
                             })
                           ) : (
-                            <div className="trade-date-calendar-empty">{loadingCalendar ? 'Loading trade dates...' : 'No trade dates available'}</div>
+                            <div className="trade-date-calendar-empty">{loadingCalendar ? 'Loading trade days...' : 'No trade days available'}</div>
                           )}
                         </div>
                       </div>
@@ -2083,7 +2906,7 @@ function TradeModal({
                       className="trade-theme-control"
                       value={selectedTradeDateOption.expiry ? formatModalDateDisplay(selectedTradeDateOption.expiry) : ''}
                       readOnly
-                      placeholder="Derived from trade date"
+                      placeholder="Derived from trade day"
                     />
                   </label>
                   <label className="trade-setup-field">
@@ -2092,7 +2915,7 @@ function TradeModal({
                       className="trade-theme-control"
                       value={selectedTradeDateOption?.dte ?? ''}
                       readOnly
-                      placeholder="Derived from trade date"
+                      placeholder="Derived from trade day"
                     />
                   </label>
                   <label className="trade-setup-field">
@@ -2120,7 +2943,7 @@ function TradeModal({
                         <div className="trade-gap-field-row">
                           <div
                             className={`trade-theme-control trade-gap-status-display trade-status-control${gapBadge.statusClass ? ` ${gapBadge.statusClass}` : ''}`}
-                            aria-label="GAP status derived from the selected trade date"
+                            aria-label="GAP status derived from the selected trade day"
                           >
                             {gapBadge.label}
                           </div>
@@ -2132,7 +2955,7 @@ function TradeModal({
                     <span>EMA Status</span>
                     <div
                       className={`trade-theme-control trade-status-control${selectedTradeDateOption.emaStatus ? ` status-${toStatusClass(selectedTradeDateOption.emaStatus ?? '')}` : ''}`}
-                      aria-label="EMA status derived from the selected trade date"
+                      aria-label="EMA status derived from the selected trade day"
                     >
                       {selectedTradeDateOption?.emaStatus ?? 'â€”'}
                     </div>
@@ -2142,13 +2965,15 @@ function TradeModal({
             </section>
           ) : null}
 
-          {!isEntryStage ? (
+        {!isEntryStage ? (
       <TradeEntryPage
         embedded
         onClose={onClose}
-        onBackToExpiry={onBackToEntry}
         onSaveAndExit={onSaveAndExit}
         saving={saving}
+        entryReasons={entryReasons}
+        exitReasons={exitReasons}
+        transitionRules={transitionRules}
         tradeDates={tradeDates}
         loadingCalendar={loadingCalendar}
         draft={draft}
@@ -2216,7 +3041,7 @@ function TradeModal({
                             </div>
                             <div className="trade-section-grid trade-row-grid">
                               <label>
-                                <span>Trade Strike</span>
+                                <span>Leg Strike</span>
                                 <input
                                   type="number"
                                   step="0.05"
@@ -2283,18 +3108,12 @@ function TradeModal({
                               </label>
                               <label>
                                 <span>Entry Time</span>
-                                <input
-                                  type="text"
-                                  list={TIME_DATALIST_ID}
-                                  inputMode="numeric"
+                                <TimeInputField
+                                  inputClassName="trade-theme-control"
+                                  value={timeDrafts[createTimeDraftKey(trade.id, tradeIndex, 'entryTime')] ?? trade.entry_time}
                                   placeholder="09:18"
-                                  value={trade.entry_time}
-                                  onChange={(event) =>
-                                    updateTradeWithOptionalRule(activeLegIndex, tradeIndex, (currentTrade) => ({
-                                      ...currentTrade,
-                                      entry_time: event.target.value,
-                                    }))
-                                  }
+                                  onChange={(nextValue) => handleTimeDraftChange(tradeIndex, 'entry_time', nextValue)}
+                                  onBlur={() => handleTimeDraftBlur(tradeIndex, 'entry_time')}
                                 />
                               </label>
                               <label>
@@ -2339,20 +3158,15 @@ function TradeModal({
                               </label>
                               <label>
                                 <span>Exit Time</span>
-                                <input
-                                  type="text"
-                                  list={TIME_DATALIST_ID}
-                                  inputMode="numeric"
+                                <TimeInputField
+                                  inputClassName="trade-theme-control"
+                                  value={timeDrafts[createTimeDraftKey(trade.id, tradeIndex, 'exitTime')] ?? trade.exit_time}
                                   placeholder="09:18"
-                                  value={trade.exit_time}
+                                  minimumValue={timeDrafts[createTimeDraftKey(trade.id, tradeIndex, 'entryTime')] ?? trade.entry_time}
                                   disabled={!hasCompleteEntryDraft(trade) && !isExitStage}
                                   readOnly={isEodExitReason(trade.exit_reason)}
-                                  onChange={(event) =>
-                                    updateTradeWithOptionalRule(activeLegIndex, tradeIndex, (currentTrade) => ({
-                                      ...currentTrade,
-                                      exit_time: event.target.value,
-                                    }))
-                                  }
+                                  onChange={(nextValue) => handleTimeDraftChange(tradeIndex, 'exit_time', nextValue)}
+                                  onBlur={() => handleTimeDraftBlur(tradeIndex, 'exit_time')}
                                 />
                               </label>
                               <label>
@@ -2431,6 +3245,7 @@ function TradeModal({
                             </div>
                           )
                         ) : null}
+
                       </div>
                     );
                   })}
@@ -2440,43 +3255,6 @@ function TradeModal({
           ) : null}
         </div>
 
-        <div className="trade-modal-footer">
-          {isEntryStage ? (
-            <>
-              <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
-                Cancel
-              </button>
-              <button className="button secondary" type="button" onClick={onBackToEntry} disabled={saving}>
-                Back to Expiry
-              </button>
-              <button
-                className="button primary"
-                type="button"
-                onClick={onSaveAndExit}
-                disabled={saving || !draft.trade_date || !draft.legs.some((leg) => leg.trades.some(hasCompleteEntryDraft))}
-              >
-                {saving ? 'Saving...' : 'Save & Exit'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
-                Cancel
-              </button>
-              <button className="button secondary" type="button" onClick={onBackToEntry} disabled={saving}>
-                Back to Entry
-              </button>
-              <button
-                className="button primary"
-                type="button"
-                onClick={onSave}
-                disabled={saving || !draft.trade_date || !draft.legs.some((leg) => leg.trades.some(hasCompleteExitDraft))}
-              >
-                {saving ? 'Saving...' : 'Save Exit'}
-              </button>
-            </>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -2504,12 +3282,12 @@ function TradeDetailModal({
         className="trade-detail-modal trade-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Trade summary"
+        aria-label="Leg summary"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="trade-modal-topbar trade-detail-topbar">
           <div className="trade-detail-title">
-            <span>Trade Summary</span>
+            <span>Leg Summary</span>
             <strong>
               {row.tradeDate} Â· Leg {row.legNo} Â· {row.option}
             </strong>
@@ -2523,7 +3301,7 @@ function TradeDetailModal({
           <section className="trade-form-section trade-detail-summary">
             <div className="trade-detail-summary-grid">
               <article className="trade-detail-summary-card">
-                <span>Trade Date</span>
+                <span>Trade Day</span>
                 <strong>{row.tradeDate}</strong>
               </article>
               <article className="trade-detail-summary-card">
@@ -2535,7 +3313,7 @@ function TradeDetailModal({
                 <strong>{row.trackStrike ?? '-'}</strong>
               </article>
               <article className="trade-detail-summary-card">
-                <span>Leg / Trade Count</span>
+                <span>Leg / Row Count</span>
                 <strong>
                   {tradeDayCount} legs Â· {tradeCount} trades
                 </strong>
@@ -2548,7 +3326,7 @@ function TradeDetailModal({
                 <strong>{row.option}</strong>
               </div>
               <div className="trade-detail-field">
-                <span>Trade Strike</span>
+                <span>Leg Strike</span>
                 <strong>{row.tradeStrike ?? '-'}</strong>
               </div>
               <div className="trade-detail-field">
@@ -2621,10 +3399,10 @@ function TradeDetailModalLight({
 
   return (
     <div className="trade-detail-backdrop" role="presentation" onClick={onClose}>
-      <div className="trade-detail-modal trade-modal" role="dialog" aria-modal="true" aria-label="Trade summary" onClick={(event) => event.stopPropagation()}>
+      <div className="trade-detail-modal trade-modal" role="dialog" aria-modal="true" aria-label="Leg summary" onClick={(event) => event.stopPropagation()}>
         <div className="trade-modal-topbar trade-detail-topbar">
           <div className="trade-detail-title">
-            <span>Trade Summary</span>
+            <span>Leg Summary</span>
             <strong>
               {row.tradeDate} Â· Leg {row.legNo} Â· {row.option}
             </strong>
@@ -2640,12 +3418,12 @@ function TradeDetailModalLight({
               <div>
                 <h4>TRADE OVERVIEW</h4>
               </div>
-              <span>Read-only summary of the selected trade</span>
+              <span>Read-only summary of the selected leg</span>
             </div>
 
             <div className="trade-detail-summary-grid">
               <article className="trade-detail-summary-card">
-                <span>Trade Date</span>
+                <span>Trade Day</span>
                 <strong>{row.tradeDate}</strong>
               </article>
               <article className="trade-detail-summary-card">
@@ -2657,7 +3435,7 @@ function TradeDetailModalLight({
                 <strong>{row.trackStrike ?? '-'}</strong>
               </article>
               <article className="trade-detail-summary-card">
-                <span>Leg / Trade Count</span>
+                <span>Leg / Row Count</span>
                 <strong>
                   {tradeDayCount} legs Â· {tradeCount} trades
                 </strong>
@@ -2670,7 +3448,7 @@ function TradeDetailModalLight({
                 <strong>{row.option}</strong>
               </div>
               <div className="trade-detail-field">
-                <span>Trade Strike</span>
+                <span>Leg Strike</span>
                 <strong>{row.tradeStrike ?? '-'}</strong>
               </div>
               <div className="trade-detail-field">
@@ -2791,8 +3569,8 @@ export function EMAIntradayTradePage() {
 
   useEffect(() => {    void Promise.all([fetchEntryReasons(), fetchExitReasons(), fetchTradeTransitionRules()])
       .then(([entryRows, exitRows, transitionRows]) => {
-        setEntryReasons(entryRows.filter((reason) => reason.is_active));
-        setExitReasons(exitRows.filter((reason) => reason.is_active));
+        setEntryReasons(entryRows.filter((reason) => reason.is_active && !HIDDEN_REASON_NAMES.has(reason.name)));
+        setExitReasons(exitRows.filter((reason) => reason.is_active && !HIDDEN_REASON_NAMES.has(reason.name)));
         setTransitionRules(transitionRows.filter((rule) => rule.is_active));
       })
       .catch(() => {
@@ -3115,18 +3893,10 @@ export function EMAIntradayTradePage() {
         closeModal();
       }
     } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : 'Unable to save trade day.');
+      setError(currentError instanceof Error ? currentError.message : 'Unable to save leg day.');
     } finally {
       setSaving(false);
     }
-  }
-
-  function backToEntry() {
-    setFlowStage('entry');
-  }
-
-  function backToExpiry() {
-    setFlowStage('expiry');
   }
 
   function renderFilterHeader(column: DashboardColumnKey, label: string) {
@@ -3212,9 +3982,9 @@ export function EMAIntradayTradePage() {
     <section className="trade-dashboard">
       <section className="trade-log-card">
         <div className="trade-log-card-heading">
-          <h3>Trade Log</h3>
+          <h3>Leg Log</h3>
           <button className="button primary trade-add-day-button" type="button" onClick={beginAddTradeDay}>
-            <span>+Trade</span>
+            <span>+Leg</span>
           </button>
         </div>
 
@@ -3228,7 +3998,7 @@ export function EMAIntradayTradePage() {
                 {renderFilterHeader('trackStrike', 'Track Strike')}
                 {renderFilterHeader('legNo', 'Leg No')}
                 {renderFilterHeader('option', 'Option')}
-                {renderFilterHeader('tradeStrike', 'Trade Strike')}
+                {renderFilterHeader('tradeStrike', 'Leg Strike')}
                 {renderFilterHeader('entryReason', 'Entry Reason')}
                 {renderFilterHeader('entryTime', 'Entry Time')}
                 {renderFilterHeader('entryPrice', 'Entry Price')}
@@ -3246,7 +4016,7 @@ export function EMAIntradayTradePage() {
               {visibleRows.length === 0 ? (
                 <tr>
                   <td className="empty-cell" colSpan={16}>
-                    No trades match the current filters.
+                    No legs match the current filters.
                   </td>
                 </tr>
               ) : (
@@ -3263,7 +4033,7 @@ export function EMAIntradayTradePage() {
                         openTradeDetail(row);
                       }
                     }}
-                    title="Open trade summary"
+                    title="Open leg summary"
                   >
                     <td>{row.expiry}</td>
                     <td className="trade-table-emphasis">{row.trackStrike ?? '-'}</td>
@@ -3330,16 +4100,8 @@ export function EMAIntradayTradePage() {
           void handleSave('close');
         }}
         onSaveAndExit={() => void handleSave('exit')}
-        onBackToEntry={flowStage === 'exit' ? backToEntry : backToExpiry}
       />
       <TradeDashboardSettingsModal open={settingsOpen} settings={tradeDashboardSettings} onClose={closeSettings} onSave={saveSettings} />
-      <datalist id={TIME_DATALIST_ID}>
-        {TIME_OPTIONS.map((timeOption) => (
-          <option key={timeOption.value} value={timeOption.value}>
-            {timeOption.label}
-          </option>
-        ))}
-      </datalist>
     </section>
   );
 }
@@ -3347,6 +4109,7 @@ export function EMAIntradayTradePage() {
 type TradeSide = 'CE' | 'PE';
 
 type TradeCellState = {
+  id: string;
   option: TradeSide;
   entryTime: string;
   strike: string;
@@ -3361,6 +4124,9 @@ type TradeCellState = {
 type TradeCardState = {
   id: string;
   title: string;
+  legNo: number;
+  createdFromLegNo: number | null;
+  triggerExitReason: string;
   expanded: boolean;
   rows: TradeCellState[];
 };
@@ -3379,12 +4145,13 @@ type SummaryCard = {
 
 function createRow(option: TradeSide): TradeCellState {
   return {
+    id: uuid(),
     option,
-    entryTime: '09:18',
+    entryTime: '',
     strike: '',
     entryPrice: '',
     entryReason: '',
-    exitTime: '09:18',
+    exitTime: '',
     exitPrice: '',
     exitReason: '',
     pnl: '',
@@ -3393,11 +4160,66 @@ function createRow(option: TradeSide): TradeCellState {
 
 function createTradeCard(index: number, expanded = false): TradeCardState {
   return {
-    id: `trade-${index}`,
-    title: `Trade ${index}`,
+    id: `leg-${index}`,
+    title: `Leg ${index}`,
+    legNo: index,
+    createdFromLegNo: null,
+    triggerExitReason: '',
     expanded,
     rows: [createRow('CE'), createRow('PE')],
   };
+}
+
+function draftLegToCard(leg: TradeLegDraft, index: number, expanded = false): TradeCardState {
+  const byOption = new Map(leg.trades.map((trade) => [trade.option, trade] as const));
+  return {
+    id: `leg-${leg.leg_no || index + 1}`,
+    title: `Leg ${leg.leg_no || index + 1}`,
+    legNo: leg.leg_no || index + 1,
+    createdFromLegNo: leg.created_from_leg_no ?? null,
+    triggerExitReason: leg.trigger_exit_reason ?? '',
+    expanded,
+    rows: (['CE', 'PE'] as TradeSide[]).map((option) => {
+      const trade = byOption.get(option);
+      return {
+        id: trade?.id || uuid(),
+        option,
+        entryTime: trade?.entry_time ?? '',
+        strike: trade?.trade_strike?.toString() ?? '',
+        entryPrice: trade?.entry_price?.toString() ?? '',
+        entryReason: trade?.entry_reason ?? '',
+        exitTime: trade?.exit_time ?? '',
+        exitPrice: trade?.exit_price?.toString() ?? '',
+        exitReason: trade?.exit_reason ?? '',
+        pnl: '',
+      };
+    }),
+  };
+}
+
+function draftToTradeCards(draft: TradeRecordDraft): TradeCardState[] {
+  const legs = draft.legs.length > 0 ? draft.legs : [emptyTradeLegDraft(1)];
+  return legs.map((leg, index) => draftLegToCard(leg, index, index === 0 || leg.created_from_leg_no !== null));
+}
+
+function tradeCardsToDraftLegs(cards: TradeCardState[], quantity: string): TradeLegDraft[] {
+  return cards.map((card) => ({
+    leg_no: card.legNo,
+    created_from_leg_no: card.createdFromLegNo,
+    trigger_exit_reason: card.triggerExitReason,
+    trades: card.rows.map((row) => ({
+      id: row.id,
+      option: row.option,
+      trade_strike: row.strike,
+      quantity,
+      entry_reason: row.entryReason,
+      exit_reason: row.exitReason,
+      entry_time: row.entryTime,
+      entry_price: row.entryPrice,
+      exit_time: row.exitTime,
+      exit_price: row.exitPrice,
+    })),
+  }));
 }
 
 function TradeEntryPlusIcon() {
@@ -3432,11 +4254,6 @@ function TradeEntryChevronDownIcon() {
   );
 }
 
-function parseDateKey(value: string) {
-  const parsed = new Date(`${value}T00:00:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 function formatDateTile(value: string) {
   if (!value) return '--';
   const parsed = parseDateKey(value);
@@ -3462,12 +4279,13 @@ function buildHeaderCards(
   draft: TradeRecordDraft,
   quantity: string,
   selectedTradeDateOption: TradeCalendarDateOption | null,
+  totalPnlAmount: number | null,
 ): SummaryCard[] {
   const gapBadge = formatGapBadge(selectedTradeDateOption);
   const emaLabel = selectedTradeDateOption?.emaStatus ?? draft.ema_status ?? '--';
 
   return [
-    { label: 'Trade Date', value: formatDateTile(draft.trade_date) },
+    { label: 'Trade Day', value: formatDateTile(draft.trade_date) },
     { label: 'Expiry Date', value: formatDateTile(draft.expiry) },
     { label: 'DTE', value: calculateDte(draft.trade_date, draft.expiry) },
     { label: 'Track Strike', value: draft.track_strike ? draft.track_strike : '--' },
@@ -3488,7 +4306,11 @@ function buildHeaderCards(
       statusLabel: selectedTradeDateOption ? gapBadge.label : (draft.gap_status || '--'),
     },
     { label: 'Quantity', value: quantity, editable: true },
-    { label: 'Total P&L Amount', value: '--' },
+    {
+      label: 'Total P&L Amount',
+      value: totalPnlAmount === null ? '--' : formatSignedCurrency(totalPnlAmount),
+      tone: totalPnlAmount === null ? 'neutral' : totalPnlAmount > 0 ? 'good' : totalPnlAmount < 0 ? 'bad' : 'neutral',
+    },
   ];
 }
 
@@ -3503,10 +4325,19 @@ function SummaryCardView({
   onQuantityChange: (value: string) => void;
   onClick?: () => void;
 }) {
+  const cardRootStyle: CSSProperties = card.statusKind
+    ? { textAlign: 'center', justifyContent: 'center', alignItems: 'center' }
+    : CENTERED_SUMMARY_CARD_STYLE;
+  const summaryValueStyle: CSSProperties =
+    card.tone === 'good' || card.tone === 'bad'
+      ? { ...CENTERED_SUMMARY_VALUE_STYLE, ...getPnlTextStyle(card.tone === 'good' ? 1 : -1, true) }
+      : CENTERED_SUMMARY_VALUE_STYLE;
+
   if (card.statusKind) {
     return (
       <div
         className={`trade-summary-card trade-summary-card--status${card.statusClass ? ` ${card.statusClass}` : ''}${onClick ? ' trade-summary-card--clickable' : ''}`}
+        style={cardRootStyle}
         role={onClick ? 'button' : undefined}
         tabIndex={onClick ? 0 : undefined}
         onClick={onClick}
@@ -3520,9 +4351,11 @@ function SummaryCardView({
               }
             : undefined
         }
-        aria-label={`${card.label} derived from the selected trade date`}
+        aria-label={`${card.label} derived from the selected trade day`}
       >
-        <strong className="trade-summary-value">{card.statusLabel ?? card.value}</strong>
+        <strong className="trade-summary-value" style={CENTERED_SUMMARY_VALUE_STYLE}>
+          {card.statusLabel ?? card.value}
+        </strong>
       </div>
     );
   }
@@ -3530,6 +4363,7 @@ function SummaryCardView({
   return (
     <div
       className={`trade-summary-card${card.valueOnly ? ' trade-summary-card--value-only' : ''}${onClick ? ' trade-summary-card--clickable' : ''}`}
+      style={cardRootStyle}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
@@ -3541,11 +4375,15 @@ function SummaryCardView({
                 onClick();
               }
             }
-          : undefined
+        : undefined
       }
     >
-      {card.valueOnly ? null : <span className="trade-summary-label">{card.label}</span>}
-      <div className="trade-summary-value-wrap">
+      {card.valueOnly ? null : (
+        <span className="trade-summary-label" style={CENTERED_SUMMARY_VALUE_STYLE}>
+          {card.label}
+        </span>
+      )}
+      <div className="trade-summary-value-wrap" style={CENTERED_SUMMARY_VALUE_WRAP_STYLE}>
         {card.editable ? (
           <input
             className="trade-summary-quantity-input"
@@ -3554,9 +4392,14 @@ function SummaryCardView({
             aria-label={card.label}
             value={quantity}
             onChange={(event) => onQuantityChange(event.target.value)}
+            style={{
+              textAlign: 'center',
+            }}
           />
         ) : (
-          <strong className="trade-summary-value">{card.value}</strong>
+          <strong className="trade-summary-value" style={summaryValueStyle}>
+            {card.value}
+          </strong>
         )}
       </div>
     </div>
@@ -3565,10 +4408,12 @@ function SummaryCardView({
 
 type TradeEntryPageProps = {
   onClose?: () => void;
-  onBackToExpiry?: () => void;
   onSaveAndExit?: () => void;
   saving?: boolean;
   embedded?: boolean;
+  entryReasons: EntryReason[];
+  exitReasons: ExitReason[];
+  transitionRules: TradeTransitionRule[];
   tradeDates: TradeCalendarDateOption[];
   loadingCalendar: boolean;
   draft: TradeRecordDraft;
@@ -3578,34 +4423,51 @@ type TradeEntryPageProps = {
 
 function TradeEntryPage({
   onClose,
-  onBackToExpiry,
   onSaveAndExit,
   saving = false,
   embedded = false,
+  entryReasons,
+  exitReasons,
+  transitionRules,
   tradeDates,
   loadingCalendar,
   draft,
   onUpdateDraft,
   onOpenSettings,
 }: TradeEntryPageProps) {
-  const [quantity, setQuantity] = useState('75');
+  const [quantity, setQuantity] = useState(() => draft.legs[0]?.trades[0]?.quantity ?? getRememberedTradeQuantity());
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [cards, setCards] = useState<TradeCardState[]>([
-    createTradeCard(1, true),
-    createTradeCard(2, false),
-    createTradeCard(3, false),
-  ]);
+  const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({});
+  const optionSeriesStrikeCacheRef = useRef<Record<string, OptionSeriesStrikeOption[]>>({});
+  const [optionSeriesStrikeRevision, setOptionSeriesStrikeRevision] = useState(0);
+  const [cards, setCards] = useState<TradeCardState[]>(() => draftToTradeCards(draft));
+  const totalQuantity = useMemo(() => parseNumberOrNull(quantity), [quantity]);
+
+  const totalPnlAmount = useMemo(() => {
+    const pnlValues = cards
+      .flatMap((card) => card.rows)
+      .map((row) => computePl(parseNumberOrNull(row.entryPrice), parseNumberOrNull(row.exitPrice), totalQuantity))
+      .filter((value): value is number => value !== null);
+
+    if (pnlValues.length === 0) return null;
+
+    return pnlValues.reduce((sum, value) => sum + value, 0);
+  }, [cards, totalQuantity]);
 
   function getCardTotalPnl(card: TradeCardState) {
     const values = card.rows
-      .map((row) => row.pnl.trim())
-      .filter((value) => value !== '')
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-    if (values.length === 0) return '--';
-    const total = values.reduce((sum, value) => sum + value, 0);
-    return total < 0 ? `-${Math.abs(total).toFixed(2)}` : total.toFixed(2);
+      .map((row) => computePl(parseNumberOrNull(row.entryPrice), parseNumberOrNull(row.exitPrice), totalQuantity))
+      .filter((value): value is number => value !== null);
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0);
   }
+
+  useEffect(() => {
+    onUpdateDraft((current) => ({
+      ...current,
+      legs: tradeCardsToDraftLegs(cards, quantity),
+    }));
+  }, [cards, onUpdateDraft, quantity]);
 
   function updateTradeCard(cardId: string, updater: (current: TradeCardState) => TradeCardState) {
     setCards((currentCards) => currentCards.map((card) => (card.id === cardId ? updater(card) : card)));
@@ -3618,24 +4480,240 @@ function TradeEntryPage({
     }));
   }
 
+  function getTimeDraftKey(cardId: string, rowIndex: number, field: 'entryTime' | 'exitTime') {
+    return `${cardId}:${rowIndex}:${field}`;
+  }
+
+  function handleTimeDraftChange(cardId: string, rowIndex: number, field: 'entryTime' | 'exitTime', value: string) {
+    const key = getTimeDraftKey(cardId, rowIndex, field);
+    const normalized = normalizeCandleTimeInput(value);
+    if (normalized !== null) {
+      setTimeDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      updateTradeRow(cardId, rowIndex, field, normalized);
+      return;
+    }
+
+    setTimeDrafts((current) => ({ ...current, [key]: value }));
+  }
+
+  function handleTimeDraftBlur(cardId: string, rowIndex: number, field: 'entryTime' | 'exitTime') {
+    const key = getTimeDraftKey(cardId, rowIndex, field);
+    const draftValue = timeDrafts[key];
+
+    if (draftValue === undefined) return;
+
+    const normalized = normalizeCandleTimeInput(draftValue);
+    if (normalized !== null) {
+      updateTradeRow(cardId, rowIndex, field, normalized);
+      setTimeDrafts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      return;
+    }
+  }
+
+  function getRowOptionSeriesEntryTime(row: TradeCellState) {
+    return row.entryTime.trim();
+  }
+
+  function getRowOptionSeriesExitTime(row: TradeCellState) {
+    const entryMinutes = parseTimeToMinutes(row.entryTime);
+    const exitMinutes = parseTimeToMinutes(row.exitTime);
+    if (entryMinutes === null || exitMinutes === null || exitMinutes <= entryMinutes) return '';
+    return row.exitTime.trim();
+  }
+
+  function getRowOptionSeriesOptionsForTime(row: TradeCellState, time: string) {
+    if (!draft.trade_date.trim() || !draft.expiry.trim() || !time) return [];
+    const key = getOptionSeriesLookupKey(draft.trade_date, draft.expiry, row.option, time);
+    const options = optionSeriesStrikeCacheRef.current[key] ?? [];
+    const currentStrike = row.strike.trim();
+    if (!currentStrike) return options;
+    if (options.some((option) => option.strike === currentStrike)) return options;
+    return [{ strike: currentStrike, close: null }, ...options];
+  }
+
+  function getRowEntryOptionSeriesOptions(row: TradeCellState) {
+    const options = getRowOptionSeriesOptionsForTime(row, getRowOptionSeriesEntryTime(row));
+    return row.strike.trim() ? getStrikeSuggestions(row.strike, options) : getStrikeSuggestions('', options);
+  }
+
+  function getRowExitOptionSeriesOptions(row: TradeCellState) {
+    const options = getRowOptionSeriesOptionsForTime(row, getRowOptionSeriesExitTime(row));
+    return row.strike.trim() ? getStrikeSuggestions(row.strike, options) : getStrikeSuggestions('', options);
+  }
+
+  function getSelectedOptionSeriesClose(row: TradeCellState) {
+    const strikeOptions = getRowEntryOptionSeriesOptions(row);
+    const selectedStrike = row.strike.trim();
+    if (!selectedStrike) return null;
+    return strikeOptions.find((option) => option.strike === selectedStrike)?.close ?? null;
+  }
+
+  function getExitOptionSeriesClose(row: TradeCellState) {
+    const strikeOptions = getRowExitOptionSeriesOptions(row);
+    const selectedStrike = row.strike.trim();
+    if (!selectedStrike) return null;
+    return strikeOptions.find((option) => option.strike === selectedStrike)?.close ?? null;
+  }
+
+  function handleStrikeSelect(cardId: string, rowIndex: number, strikeOption: OptionSeriesStrikeOption) {
+    updateTradeRow(cardId, rowIndex, 'strike', strikeOption.strike);
+    updateTradeRow(cardId, rowIndex, 'entryPrice', strikeOption.close === null ? '' : strikeOption.close.toFixed(2));
+  }
+
+  function updateExitReasonWithTransition(cardId: string, rowIndex: number, nextExitReason: string) {
+    setCards((currentCards) => {
+      const currentCardIndex = currentCards.findIndex((card) => card.id === cardId);
+      if (currentCardIndex < 0) return currentCards;
+
+      const currentDraft = {
+        ...draft,
+        legs: tradeCardsToDraftLegs(currentCards, quantity),
+      };
+
+      const updatedDraft = updateTradeInLeg(currentDraft, currentCardIndex, rowIndex, (trade) => ({
+        ...trade,
+        exit_reason: nextExitReason,
+        exit_time: isEodExitReason(nextExitReason) ? EOD_EXIT_TIME : trade.exit_time === EOD_EXIT_TIME ? '' : trade.exit_time,
+      }));
+
+      const matchingRule = findMatchingTransitionRule(updatedDraft.legs[currentCardIndex]?.trades[rowIndex] ?? emptyTradeEntryDraft('CE'), transitionRules);
+      const nextDraft = matchingRule ? applyTransitionRuleToDraft(updatedDraft, currentCardIndex, matchingRule) : updatedDraft;
+
+      return draftToTradeCards(nextDraft);
+    });
+  }
+
   function toggleTrade(cardId: string) {
     updateTradeCard(cardId, (current) => ({ ...current, expanded: !current.expanded }));
   }
 
   function removeTrade(cardId: string) {
-    setCards((currentCards) => currentCards.filter((card) => card.id !== cardId));
+    setCards((currentCards) => {
+      if (currentCards.length <= 1) return currentCards;
+      return currentCards.filter((card) => card.id !== cardId);
+    });
   }
 
   function addTrade() {
-    setCards((currentCards) => [...currentCards, createTradeCard(currentCards.length + 1, true)]);
+    setCards((currentCards) => (currentCards.length === 0 ? [createTradeCard(1, true)] : currentCards));
   }
 
   useEffect(() => {
     console.log('ENTRY_DRAFT_UPDATED', draft.trade_date);
   }, [draft.trade_date]);
 
+  useEffect(() => {
+    const tradeDate = draft.trade_date.trim();
+    const expiry = draft.expiry.trim();
+    if (!tradeDate || !expiry) return;
+
+    const targets = Array.from(
+      new Map(
+        cards
+          .flatMap((card) =>
+            card.rows
+              .flatMap((row) => {
+                const times = [getRowOptionSeriesEntryTime(row), getRowOptionSeriesExitTime(row)].filter((time) => time);
+                return times.map((time) => ({
+                  key: getOptionSeriesLookupKey(tradeDate, expiry, row.option, time),
+                  tradeDate,
+                  expiry,
+                  option: row.option,
+                  time,
+                }));
+              }),
+          )
+          .map((target) => [target.key, target] as const),
+      ).values(),
+    );
+
+    const pendingTargets = targets.filter((target) => optionSeriesStrikeCacheRef.current[target.key] === undefined);
+    if (pendingTargets.length === 0) return;
+
+    let active = true;
+
+    void Promise.all(
+      pendingTargets.map(async (target) => {
+        const response = await readOptionSeriesStrikes(target.tradeDate, target.expiry, target.option, target.time);
+        return {
+          key: target.key,
+          rows: response.status === 'success' ? response.rows ?? [] : [],
+        };
+      }),
+    ).then((results) => {
+      if (!active) return;
+
+      results.forEach(({ key, rows }) => {
+        optionSeriesStrikeCacheRef.current[key] = rows;
+      });
+      setOptionSeriesStrikeRevision((current) => current + 1);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [cards, draft.expiry, draft.trade_date, optionSeriesStrikeRevision]);
+
+  useEffect(() => {
+    const tradeDate = draft.trade_date.trim();
+    const expiry = draft.expiry.trim();
+    if (!tradeDate || !expiry) return;
+
+    setCards((currentCards) => {
+      let hasChanges = false;
+
+      const nextCards = currentCards.map((card) => ({
+        ...card,
+        rows: card.rows.map((row) => {
+          const entryTime = getRowOptionSeriesEntryTime(row);
+          const entryKey = entryTime ? getOptionSeriesLookupKey(tradeDate, expiry, row.option, entryTime) : '';
+          const entryOptions = entryKey ? optionSeriesStrikeCacheRef.current[entryKey] ?? [] : [];
+          const selectedEntryOption =
+            row.strike.trim() && entryOptions.length > 0
+              ? entryOptions.find((option) => option.strike === row.strike.trim()) ?? getTopRankedStrikeOption(entryOptions)
+              : getTopRankedStrikeOption(entryOptions);
+          const autoFilledStrike = row.strike.trim() || selectedEntryOption?.strike || '';
+          const entryClose = autoFilledStrike
+            ? entryOptions.find((option) => option.strike === autoFilledStrike)?.close ?? selectedEntryOption?.close ?? null
+            : null;
+          const nextEntryPrice = entryClose === null ? '' : entryClose.toFixed(2);
+
+          const exitTime = getRowOptionSeriesExitTime(row);
+          const exitKey = exitTime ? getOptionSeriesLookupKey(tradeDate, expiry, row.option, exitTime) : '';
+          const exitOptions = exitKey ? optionSeriesStrikeCacheRef.current[exitKey] ?? [] : [];
+          const exitClose = autoFilledStrike
+            ? exitOptions.find((option) => option.strike === autoFilledStrike)?.close ?? null
+            : null;
+          const nextExitPrice = exitClose === null ? '' : exitClose.toFixed(2);
+
+          if (row.strike !== autoFilledStrike || row.entryPrice !== nextEntryPrice || row.exitPrice !== nextExitPrice) {
+            hasChanges = true;
+            return {
+              ...row,
+              strike: autoFilledStrike,
+              entryPrice: nextEntryPrice,
+              exitPrice: nextExitPrice,
+            };
+          }
+
+          return row;
+        }),
+      }));
+
+      return hasChanges ? nextCards : currentCards;
+    });
+  }, [cards, draft.expiry, draft.trade_date, optionSeriesStrikeRevision]);
+
   const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
-  const headerCards = buildHeaderCards(draft, quantity, selectedTradeDateOption);
+  const headerCards = buildHeaderCards(draft, quantity, selectedTradeDateOption, totalPnlAmount);
 
   return (
     <main className={`trade-page-shell${embedded ? ' trade-page-shell--embedded' : ''}`}>
@@ -3654,40 +4732,53 @@ function TradeEntryPage({
                 card={card}
                 quantity={quantity}
                 onQuantityChange={setQuantity}
-                onClick={card.label === 'Trade Date' ? () => setCalendarOpen(true) : undefined}
+                onClick={card.label === 'Trade Day' ? () => setCalendarOpen(true) : undefined}
               />
             ))}
           </div>
-
-          <button className="trade-new-button" type="button" onClick={addTrade}>
-            <span className="trade-new-button-icon">
-              <TradeEntryPlusIcon />
-            </span>
-            <span>New Trade</span>
-          </button>
         </header>
 
         <section className="trade-stack">
           {cards.map((card) => {
             const totalPnl = getCardTotalPnl(card);
+            const totalPnlDisplay = totalPnl === null ? '--' : formatSignedCurrency(totalPnl);
             return (
               <article key={card.id} className={`trade-card${card.expanded ? ' trade-card--expanded' : ''}`}>
                 <div className="trade-card-header">
                   <div className="trade-card-title-group">
-                    <h2 className="trade-card-title">{card.title}</h2>
+                    <div style={{ display: 'grid', gap: '4px' }}>
+                      <h2 className="trade-card-title">{card.title}</h2>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '10px',
+                          color: '#54645f',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        <span>Leg No: {card.legNo}</span>
+                        <span>Created From Leg #: {card.createdFromLegNo ?? '--'}</span>
+                        <span>Trigger Exit Reason: {card.triggerExitReason || '--'}</span>
+                      </div>
+                    </div>
                     <div className="trade-card-total">
-                      <span>Total P&amp;L:</span>
-                      <strong>{totalPnl}</strong>
+                      <span>Leg P&amp;L:</span>
+                      <strong style={getPnlTextStyle(totalPnl, true)}>{totalPnlDisplay}</strong>
                     </div>
                   </div>
 
                   <div className="trade-card-actions">
-                    <button className="trade-card-toggle" type="button" onClick={() => toggleTrade(card.id)} aria-label={card.expanded ? 'Collapse trade' : 'Expand trade'}>
+                    <button className="trade-card-toggle" type="button" onClick={() => toggleTrade(card.id)} aria-label={card.expanded ? 'Collapse leg' : 'Expand leg'}>
                       {card.expanded ? <TradeEntryMinusIcon /> : <TradeEntryPlusIcon />}
                     </button>
-                    <button className="trade-card-delete" type="button" onClick={() => removeTrade(card.id)} aria-label={`Delete ${card.title}`}>
-                      <TradeEntryTrashIcon />
-                    </button>
+                    {cards.length > 1 ? (
+                      <button className="trade-card-delete" type="button" onClick={() => removeTrade(card.id)} aria-label={`Delete ${card.title}`}>
+                        <TradeEntryTrashIcon />
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -3726,51 +4817,113 @@ function TradeEntryPage({
                           </tr>
                         </thead>
                         <tbody>
-                          {card.rows.map((row, rowIndex) => (
-                            <tr key={`${card.id}-${row.option}`}>
-                              <td className="trade-option-cell">{row.option}</td>
-                              <td>
-                                <input className="trade-input" type="text" value={row.entryTime} onChange={(event) => updateTradeRow(card.id, rowIndex, 'entryTime', event.target.value)} />
-                              </td>
-                              <td>
-                                <input className="trade-input" type="text" value={row.strike} onChange={(event) => updateTradeRow(card.id, rowIndex, 'strike', event.target.value)} />
-                              </td>
-                              <td>
-                                <input className="trade-input" type="text" value={row.entryPrice} onChange={(event) => updateTradeRow(card.id, rowIndex, 'entryPrice', event.target.value)} />
-                              </td>
-                              <td>
-                                <div className="trade-select-shell">
-                                  <select className="trade-select" value={row.entryReason} onChange={(event) => updateTradeRow(card.id, rowIndex, 'entryReason', event.target.value)}>
-                                    <option value="">Select entry reason</option>
-                                    <option value="Breakout">Breakout</option>
-                                    <option value="Pullback">Pullback</option>
-                                    <option value="Trend Continuation">Trend Continuation</option>
-                                  </select>
-                                  <TradeEntryChevronDownIcon />
-                                </div>
-                              </td>
-                              <td>
-                                <input className="trade-input" type="text" value={row.exitTime} onChange={(event) => updateTradeRow(card.id, rowIndex, 'exitTime', event.target.value)} />
-                              </td>
-                              <td>
-                                <input className="trade-input" type="text" value={row.exitPrice} onChange={(event) => updateTradeRow(card.id, rowIndex, 'exitPrice', event.target.value)} />
-                              </td>
-                              <td>
-                                <div className="trade-select-shell trade-select-shell--muted">
-                                  <select className="trade-select" value={row.exitReason} onChange={(event) => updateTradeRow(card.id, rowIndex, 'exitReason', event.target.value)}>
-                                    <option value="">Select exit reason</option>
-                                    <option value="Target">Target</option>
-                                    <option value="Stop Loss">Stop Loss</option>
-                                    <option value="EOD">EOD</option>
-                                  </select>
-                                  <TradeEntryChevronDownIcon />
-                                </div>
-                              </td>
-                              <td>
-                                <input className="trade-input trade-input--pnl" type="text" readOnly value={row.pnl} aria-label={`${card.title} ${row.option} P and L`} />
-                              </td>
-                            </tr>
-                          ))}
+                          {card.rows.map((row, rowIndex) => {
+                            const rowPnl = computeRowPnl(row.entryPrice, row.exitPrice, quantity);
+
+                            return (
+                              <tr key={row.id}>
+                                <td className="trade-option-cell">{row.option}</td>
+                                <td>
+                                  <TimeInputField
+                                    inputClassName="trade-input"
+                                    value={timeDrafts[getTimeDraftKey(card.id, rowIndex, 'entryTime')] ?? row.entryTime}
+                                    onChange={(nextValue) => handleTimeDraftChange(card.id, rowIndex, 'entryTime', nextValue)}
+                                    onBlur={() => handleTimeDraftBlur(card.id, rowIndex, 'entryTime')}
+                                  />
+                                </td>
+                                <td>
+                                  {getRowEntryOptionSeriesOptions(row).length > 0 ? (
+                                    <StrikeInputField
+                                      inputClassName="trade-input"
+                                      value={row.strike}
+                                      options={getRowEntryOptionSeriesOptions(row)}
+                                      ariaLabel={`${card.title} ${row.option} strike`}
+                                      placeholder="Select strike"
+                                      onChange={(nextValue) => updateTradeRow(card.id, rowIndex, 'strike', nextValue)}
+                                      onSelectOption={(strikeOption) => handleStrikeSelect(card.id, rowIndex, strikeOption)}
+                                      onBlur={() => {
+                                        const selectedStrike = row.strike.trim();
+                                        if (!selectedStrike) return;
+                                        const strikeOption = getRowEntryOptionSeriesOptions(row).find((option) => option.strike === selectedStrike);
+                                        if (strikeOption) {
+                                          handleStrikeSelect(card.id, rowIndex, strikeOption);
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <input
+                                      className="trade-input"
+                                      type="text"
+                                      value={row.strike}
+                                      onChange={(event) => updateTradeRow(card.id, rowIndex, 'strike', event.target.value)}
+                                    />
+                                  )}
+                                </td>
+                                <td>
+                                  <input className="trade-input" type="text" value={row.entryPrice} onChange={(event) => updateTradeRow(card.id, rowIndex, 'entryPrice', event.target.value)} />
+                                </td>
+                                <td>
+                                  <div className="trade-select-shell">
+                                    <select className="trade-select" value={row.entryReason} onChange={(event) => updateTradeRow(card.id, rowIndex, 'entryReason', event.target.value)}>
+                                      <option value="">Select entry reason</option>
+                                      {entryReasons.map((reason) => (
+                                        <option key={reason.id} value={reason.name}>
+                                          {reason.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <TradeEntryChevronDownIcon />
+                                  </div>
+                                </td>
+                                <td>
+                                  <TimeInputField
+                                    inputClassName="trade-input"
+                                    value={timeDrafts[getTimeDraftKey(card.id, rowIndex, 'exitTime')] ?? row.exitTime}
+                                    minimumValue={timeDrafts[getTimeDraftKey(card.id, rowIndex, 'entryTime')] ?? row.entryTime}
+                                    onChange={(nextValue) => handleTimeDraftChange(card.id, rowIndex, 'exitTime', nextValue)}
+                                    onBlur={() => handleTimeDraftBlur(card.id, rowIndex, 'exitTime')}
+                                  />
+                                </td>
+                                <td>
+                                  <input className="trade-input" type="text" value={row.exitPrice} onChange={(event) => updateTradeRow(card.id, rowIndex, 'exitPrice', event.target.value)} />
+                                </td>
+                                <td>
+                                  <div className="trade-select-shell trade-select-shell--muted">
+                                    <select
+                                      className="trade-select"
+                                      value={row.exitReason}
+                                      onChange={(event) => updateExitReasonWithTransition(card.id, rowIndex, event.target.value)}
+                                    >
+                                      <option value="">Select exit reason</option>
+                                      {exitReasons.map((reason) => (
+                                        <option key={reason.id} value={reason.name}>
+                                          {reason.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <TradeEntryChevronDownIcon />
+                                  </div>
+                                </td>
+                                <td>
+                                  <input
+                                    className="trade-input trade-input--pnl"
+                                    type="text"
+                                    readOnly
+                                    value={rowPnl === null ? '' : formatSignedCurrency(rowPnl)}
+                                    aria-label={`${card.title} ${row.option} P and L`}
+                                    style={{
+                                      paddingLeft: '14px',
+                                      paddingRight: '14px',
+                                      fontSize: '13.5px',
+                                      fontWeight: 900,
+                                      letterSpacing: '0.01em',
+                                      color: getPnlColor(rowPnl),
+                                    }}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -3786,9 +4939,6 @@ function TradeEntryPage({
           <div className="trade-page-footer-actions">
             <button className="trade-button trade-button--ghost" type="button" onClick={onClose} disabled={saving}>
               Cancel
-            </button>
-            <button className="trade-button trade-button--ghost" type="button" onClick={onBackToExpiry} disabled={saving}>
-              Back to Expiry
             </button>
             <button className="trade-button trade-button--primary" type="button" onClick={onSaveAndExit} disabled={saving}>
               {saving ? 'Saving...' : 'Save & Exit'}
@@ -3822,94 +4972,3 @@ function TradeEntryPage({
     </main>
   );
 }
-
-type TradeDateCalendarProps = {
-  open: boolean;
-  loadingCalendar: boolean;
-  tradeDates: TradeCalendarDateOption[];
-  draft: TradeRecordDraft;
-  onUpdateDraft: (updater: (current: TradeRecordDraft) => TradeRecordDraft) => void;
-  onClose: () => void;
-  onOpenSettings?: () => void;
-  onSaveDate?: (nextDraft: TradeRecordDraft, selectedDateOption: TradeCalendarDateOption | null) => void;
-  mode?: 'embedded' | 'modal';
-  selectionMode?: 'instant' | 'deferred';
-  disableDateSelection?: boolean;
-};
-
-function TradeDateCalendar({
-  open,
-  loadingCalendar,
-  tradeDates,
-  draft,
-  onUpdateDraft,
-  onClose,
-  onOpenSettings,
-  onSaveDate,
-  mode = 'embedded',
-  selectionMode = 'instant',
-  disableDateSelection = false,
-}: TradeDateCalendarProps) {
-  const [previewDraft, setPreviewDraft] = useState<TradeRecordDraft>(draft);
-
-  useEffect(() => {
-    if (open) {
-      setPreviewDraft(draft);
-    }
-  }, [draft, open]);
-
-  const selectedDateOption = tradeDates.find((option) => option.date === previewDraft.trade_date) ?? null;
-
-  if (!open) return null;
-
-  const inner = (
-    <CalendarBody
-      loadingCalendar={loadingCalendar}
-      tradeDates={tradeDates}
-      draft={selectionMode === 'deferred' ? previewDraft : draft}
-      onUpdateDraft={selectionMode === 'deferred' ? setPreviewDraft : onUpdateDraft}
-      onOpenSettings={onOpenSettings}
-      selectionMode={selectionMode}
-      disableDateSelection={disableDateSelection}
-    />
-  );
-
-  if (mode === 'embedded') {
-    return inner;
-  }
-
-  return (
-    <div className="trade-modal-backdrop trade-modal-backdrop--expiry" role="presentation" onClick={onClose}>
-      <div className="trade-modal trade-modal--expiry" role="dialog" aria-modal="true" aria-label="Add trade" onClick={(event) => event.stopPropagation()}>
-        <div className="trade-modal-topbar">
-          <button className="button secondary trade-modal-close" type="button" onClick={onClose} aria-label="Close">
-            <CloseIcon />
-          </button>
-        </div>
-        <div className="trade-modal-body">{inner}</div>
-        {selectionMode === 'deferred' ? (
-          <div className="trade-page-footer">
-            <div className="trade-page-footer-line" />
-            <div className="trade-page-footer-actions">
-              <button className="trade-button trade-button--ghost" type="button" onClick={onClose}>
-                Cancel
-              </button>
-              <button
-                className="trade-button trade-button--primary"
-                type="button"
-                onClick={() => {
-                  console.log('CALENDAR_SAVE', selectedDateOption);
-                  onSaveDate?.(previewDraft, selectedDateOption);
-                  onClose();
-                }}
-              >
-                Save Date
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
