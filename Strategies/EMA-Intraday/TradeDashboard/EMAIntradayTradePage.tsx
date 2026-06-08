@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { TradeEntryPage } from '../../../Helper/App/src/TradeEntryPage';
+import { TradeEntryPage } from './TradeEntryPage';
 import { fetchEntryReasons, fetchExitReasons, fetchTradeTransitionRules } from '../Masters/mastersService';
 import type { EntryReason, ExitReason, TradeTransitionRule } from '../Masters/masters';
+import { formatGapBadge, toStatusClass } from './tradeStatus';
 import {
   deleteTradeEntry,
   emptyTradeDraft,
@@ -604,48 +605,6 @@ type TradeDateCalendarMonth = {
 
 const CALENDAR_WEEKDAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const CALENDAR_MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function toStatusClass(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
-}
-
-function formatGapBadge(option: TradeCalendarDateOption | null) {
-  if (!option?.gapStatus) {
-    return {
-      label: '-',
-      statusClass: '',
-    };
-  }
-
-  const normalizedStatus = option.gapStatus.trim().toLowerCase();
-  const roundedGapValue = option.gapValue === null || option.gapValue === undefined ? null : Math.round(Math.abs(option.gapValue));
-
-  if (normalizedStatus === 'no gap') {
-    return {
-      label: 'NO GAP',
-      statusClass: 'status-no-gap',
-    };
-  }
-
-  if (normalizedStatus.includes('gap dn') || normalizedStatus.includes('gap down') || (option.gapValue ?? 0) < 0) {
-    return {
-      label: `GAP DN - ${roundedGapValue ?? ''}`.trim(),
-      statusClass: 'status-gap-down',
-    };
-  }
-
-  if (normalizedStatus.includes('gap up') || (option.gapValue ?? 0) > 0) {
-    return {
-      label: `GAP UP + ${roundedGapValue ?? ''}`.trim(),
-      statusClass: 'status-gap-up',
-    };
-  }
-
-  return {
-    label: option.gapStatus.toUpperCase(),
-    statusClass: `status-${toStatusClass(option.gapStatus)}`,
-  };
-}
 
 function formatIndianNumber(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === '') return '';
@@ -1252,7 +1211,6 @@ function TradeModal({
 
   const activeLeg = draft.legs[activeLegIndex] ?? draft.legs[0];
   const activeTradeCount = activeLeg?.trades.length ?? 0;
-  const isExpiryStage = flowStage === 'expiry';
   const isEntryStage = flowStage === 'entry';
   const isExitStage = flowStage === 'exit';
   const isSetupReady = Boolean(
@@ -1269,7 +1227,16 @@ function TradeModal({
   const availableMonthKeys = new Set(tradeCalendarMonths.map((month) => month.monthKey));
   const availableTradeYears = Array.from(new Set(tradeCalendarMonths.map((month) => Number(month.monthKey.slice(0, 4))))).sort((left, right) => left - right);
   const todayDateKey = getTodayDateKey();
-  const selectedTradeDateOption = tradeDates.find((option) => option.date === draft.trade_date) ?? null;
+  const selectedTradeDateOption =
+    tradeDates.find((option) => option.date === draft.trade_date) ?? {
+      date: '',
+      expiry: '',
+      dte: null,
+      strike: null,
+      gapValue: null,
+      gapStatus: '',
+      emaStatus: '',
+    };
 
   useEffect(() => {
     if (!selectedTradeDateOption || selectedTradeDateOption.strike === null || !draft.trade_date) return;
@@ -1379,14 +1346,8 @@ function TradeModal({
   if (!open) return null;
 
   return (
-    <div className={`trade-modal-backdrop${isExpiryStage ? ' trade-modal-backdrop--expiry' : ''}`} role="presentation" onClick={onClose}>
-      <div
-        className={`trade-modal${isExpiryStage ? ' trade-modal--expiry' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Add trade"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <div className="trade-modal-backdrop" role="presentation" onClick={onClose}>
+      <div className="trade-modal" role="dialog" aria-modal="true" aria-label="Add trade" onClick={(event) => event.stopPropagation()}>
         <div className="trade-modal-topbar">
           <button className="button secondary trade-modal-close" type="button" onClick={onClose} aria-label="Close">
             <CloseIcon />
@@ -1394,7 +1355,7 @@ function TradeModal({
         </div>
 
         <div className="trade-modal-body">
-          {isExpiryStage ? (
+          {false ? (
             <section className="trade-form-section trade-setup-section">
               <div className="trade-setup-heading" style={{ justifyContent: 'space-between', gap: '16px' }}>
                 <div className="trade-setup-brand">
@@ -1602,7 +1563,7 @@ function TradeModal({
                     <span>Expiry Date</span>
                     <input
                       className="trade-theme-control"
-                      value={selectedTradeDateOption?.expiry ? formatModalDateDisplay(selectedTradeDateOption.expiry) : ''}
+                      value={selectedTradeDateOption.expiry ? formatModalDateDisplay(selectedTradeDateOption.expiry) : ''}
                       readOnly
                       placeholder="Derived from trade date"
                     />
@@ -1622,7 +1583,7 @@ function TradeModal({
                       className="trade-theme-control"
                       type="text"
                       inputMode="numeric"
-                      placeholder={selectedTradeDateOption?.strike === null ? 'ATM unavailable' : 'Enter strike'}
+                      placeholder={selectedTradeDateOption.strike === null ? 'ATM unavailable' : 'Enter strike'}
                       value={formatIndianNumber(draft.track_strike)}
                       disabled={isExitStage || !draft.trade_date}
                       onChange={(event) =>
@@ -1652,7 +1613,7 @@ function TradeModal({
                   <label className="trade-setup-field">
                     <span>EMA Status</span>
                     <div
-                      className={`trade-theme-control trade-status-control${selectedTradeDateOption?.emaStatus ? ` status-${toStatusClass(selectedTradeDateOption.emaStatus)}` : ''}`}
+                      className={`trade-theme-control trade-status-control${selectedTradeDateOption.emaStatus ? ` status-${toStatusClass(selectedTradeDateOption.emaStatus ?? '')}` : ''}`}
                       aria-label="EMA status derived from the selected trade date"
                     >
                       {selectedTradeDateOption?.emaStatus ?? '—'}
@@ -1663,14 +1624,19 @@ function TradeModal({
             </section>
           ) : null}
 
-          {!isExpiryStage ? (
-            <TradeEntryPage
-              embedded
-              onClose={onClose}
-              onBackToExpiry={onBackToEntry}
-              onSaveAndExit={onSaveAndExit}
-              saving={saving}
-            />
+          {!isEntryStage ? (
+      <TradeEntryPage
+        embedded
+        onClose={onClose}
+        onBackToExpiry={onBackToEntry}
+        onSaveAndExit={onSaveAndExit}
+        saving={saving}
+        tradeDates={tradeDates}
+        loadingCalendar={loadingCalendar}
+        draft={draft}
+        onUpdateDraft={onUpdateDraft}
+        onOpenSettings={onOpenSettings}
+      />
           ) : null}
           {false ? (
             <section className="trade-workspace">
@@ -1680,7 +1646,7 @@ function TradeModal({
                   <span>{draft.legs.length}</span>
                 </div>
                 <div className="trade-leg-toolbar-actions">
-                  {!isExpiryStage && activeLegIndex === 0 && activeLeg?.trades.length < 2 ? (
+                  {!isEntryStage && activeLegIndex === 0 && activeLeg?.trades.length < 2 ? (
                     <button
                       className="button ghost"
                       type="button"
@@ -1956,21 +1922,12 @@ function TradeModal({
           ) : null}
         </div>
 
-        {isExpiryStage ? <div className="trade-modal-footer">
-          <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
-            Cancel
-          </button>
-          {isExpiryStage ? (
-            <button
-              className="button primary"
-              type="button"
-              onClick={onSave}
-              disabled={saving || !isSetupReady}
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </button>
-          ) : isEntryStage ? (
+        <div className="trade-modal-footer">
+          {isEntryStage ? (
             <>
+              <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
+                Cancel
+              </button>
               <button className="button secondary" type="button" onClick={onBackToEntry} disabled={saving}>
                 Back to Expiry
               </button>
@@ -1985,6 +1942,9 @@ function TradeModal({
             </>
           ) : (
             <>
+              <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
+                Cancel
+              </button>
               <button className="button secondary" type="button" onClick={onBackToEntry} disabled={saving}>
                 Back to Entry
               </button>
@@ -1998,7 +1958,7 @@ function TradeModal({
               </button>
             </>
           )}
-        </div> : null}
+        </div>
       </div>
     </div>
   );
@@ -2270,7 +2230,7 @@ function TradeDetailModalLight({
   );
 }
 
-export function TradeDashboardPage() {
+export function EMAIntradayTradePage() {
   const [records, setRecords] = useState<TradeRecord[]>([]);
   const [entryReasons, setEntryReasons] = useState<EntryReason[]>([]);
   const [exitReasons, setExitReasons] = useState<ExitReason[]>([]);  const [tradeDates, setTradeDates] = useState<TradeCalendarDateOption[]>([]);
@@ -2559,7 +2519,7 @@ export function TradeDashboardPage() {
     setOpen(false);
     setEditingId(null);
     setSelectedTradeId(null);
-    setFlowStage('expiry');
+    setFlowStage('entry');
     setDraft(emptyTradeDraft());
   }
 
@@ -2865,4 +2825,5 @@ export function TradeDashboardPage() {
     </section>
   );
 }
+
 

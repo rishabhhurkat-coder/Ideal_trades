@@ -2,7 +2,7 @@
 import { HistoricalDataPage } from './HistoricalData/HistoricalDataPage';
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { MastersPage } from './Masters/MastersPage';
-import { TradeDashboardPage } from './TradeDashboard/TradeDashboardPage';
+import { EMAIntradayTradePage } from './TradeDashboard/EMAIntradayTradePage';
 
 type EmaIntradayPageProps = {
   openHistoricalData?: boolean;
@@ -148,7 +148,7 @@ export function EmaIntradayPage({ openHistoricalData = false, sidebar }: EmaIntr
         </div>
       </section>
 
-      <TradeDashboardPage />
+      <EMAIntradayTradePage />
     </section>
   );
 
