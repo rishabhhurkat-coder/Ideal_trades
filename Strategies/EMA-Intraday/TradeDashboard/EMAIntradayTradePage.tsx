@@ -115,7 +115,7 @@ export type TradeRecordDraft = {
 };
 
 const DEFAULT_TRADE_QUANTITY = '130';
-const EOD_EXIT_TIME = '15:30';
+const EOD_EXIT_TIME = '15:27';
 const TRADE_DASHBOARD_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
 const HIDDEN_REASON_NAMES = new Set(['CE SL Trigger', 'PE SL Trigger', 'Manual Entry']);
 let tradeCalendarRequestCount = 0;
@@ -2501,20 +2501,6 @@ function TradeModal({
   }, [draft.legs, open, selectedTradeId]);
 
   useEffect(() => {
-    if (!open) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
-  useEffect(() => {
     if (!open) {
       setActiveLegIndex(0);
       setVisibleTradeMonthIndex(0);
@@ -4271,6 +4257,14 @@ function draftToTradeCards(draft: TradeRecordDraft): TradeCardState[] {
   return legs.map((leg, index) => draftLegToCard(leg, index, index === 0 || leg.created_from_leg_no !== null));
 }
 
+function preserveCardExpansionState(nextCards: TradeCardState[], previousCards: TradeCardState[]) {
+  const previousExpansionById = new Map(previousCards.map((card) => [card.id, card.expanded] as const));
+  return nextCards.map((card) => ({
+    ...card,
+    expanded: previousExpansionById.get(card.id) ?? card.expanded,
+  }));
+}
+
 function tradeCardsToDraftLegs(cards: TradeCardState[], quantity: string): TradeLegDraft[] {
   return cards.map((card) => ({
     leg_no: card.legNo,
@@ -4656,12 +4650,16 @@ function TradeEntryPage({
       const matchingRule = findMatchingTransitionRule(updatedDraft.legs[currentCardIndex]?.trades[rowIndex] ?? emptyTradeEntryDraft('CE'), transitionRules);
       const nextDraft = matchingRule ? applyTransitionRuleToDraft(updatedDraft, currentCardIndex, rowIndex, matchingRule) : updatedDraft;
 
-      return draftToTradeCards(nextDraft);
+      return preserveCardExpansionState(draftToTradeCards(nextDraft), currentCards);
     });
   }
 
   function toggleTrade(cardId: string) {
     updateTradeCard(cardId, (current) => ({ ...current, expanded: !current.expanded }));
+  }
+
+  function collapseAllTrades() {
+    setCards((currentCards) => currentCards.map((card) => ({ ...card, expanded: false })));
   }
 
   function removeTrade(cardId: string) {
@@ -4840,6 +4838,11 @@ function TradeEntryPage({
                   </div>
 
                   <div className="trade-card-actions">
+                    {card.legNo === 1 ? (
+                      <button className="button secondary" type="button" onClick={collapseAllTrades}>
+                        Collapse All
+                      </button>
+                    ) : null}
                     <button className="trade-card-toggle" type="button" onClick={() => toggleTrade(card.id)} aria-label={card.expanded ? 'Collapse leg' : 'Expand leg'}>
                       {card.expanded ? <TradeEntryMinusIcon /> : <TradeEntryPlusIcon />}
                     </button>
