@@ -6,7 +6,27 @@ import react from '@vitejs/plugin-react';
 import { createClient } from '@supabase/supabase-js';
 import { dirname } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
-import ws from 'file:///C:/Users/Dell/Matalia_Accounting_Engine/RRH_Project_Files/Application/node_modules/ws/wrapper.mjs';
+
+class NoopWebSocket {
+  binaryType = 'arraybuffer';
+  timeout = 0;
+  onopen: ((event: unknown) => void) | null = null;
+  onclose: ((event: unknown) => void) | null = null;
+  onerror: ((event: unknown) => void) | null = null;
+  onmessage: ((event: unknown) => void) | null = null;
+
+  constructor(_address: string | URL, _subprotocols?: string | string[]) {}
+
+  addEventListener() {}
+
+  removeEventListener() {}
+
+  send() {}
+
+  close() {
+    this.onclose?.({ type: 'close' });
+  }
+}
 
 const appRoot = fileURLToPath(new URL('.', import.meta.url));
 const kiteSessionPath = fileURLToPath(new URL('./.kite-session.json', import.meta.url));
@@ -763,7 +783,11 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
   const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || '';
   const supabaseClient =
     supabaseUrl && supabaseAnonKey
-      ? createClient(supabaseUrl, supabaseAnonKey, { realtime: { transport: ws } })
+      ? createClient(supabaseUrl, supabaseAnonKey, {
+          realtime: {
+            transport: NoopWebSocket as unknown as typeof WebSocket,
+          },
+        })
       : null;
 
   return {

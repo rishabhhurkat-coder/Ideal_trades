@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { TradeEntryPage } from '../../../Helper/App/src/TradeEntryPage';
 import { fetchEntryReasons, fetchExitReasons, fetchTradeTransitionRules } from '../Masters/mastersService';
 import type { EntryReason, ExitReason, TradeTransitionRule } from '../Masters/masters';
 import {
@@ -1663,6 +1664,15 @@ function TradeModal({
           ) : null}
 
           {!isExpiryStage ? (
+            <TradeEntryPage
+              embedded
+              onClose={onClose}
+              onBackToExpiry={onBackToEntry}
+              onSaveAndExit={onSaveAndExit}
+              saving={saving}
+            />
+          ) : null}
+          {false ? (
             <section className="trade-workspace">
               <div className="trade-leg-toolbar">
                 <div className="trade-leg-toolbar-heading">
@@ -1946,7 +1956,7 @@ function TradeModal({
           ) : null}
         </div>
 
-        <div className="trade-modal-footer">
+        {isExpiryStage ? <div className="trade-modal-footer">
           <button className="button secondary" type="button" onClick={onClose} disabled={saving}>
             Cancel
           </button>
@@ -1988,7 +1998,7 @@ function TradeModal({
               </button>
             </>
           )}
-        </div>
+        </div> : null}
       </div>
     </div>
   );

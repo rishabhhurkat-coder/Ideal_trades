@@ -108,8 +108,6 @@ Important files:
 - `Strategies/EMA-Intraday/HistoricalData/KiteConnectService.ts`
 - `Strategies/EMA-Intraday/HistoricalData/types.ts`
 - `Strategies/EMA-Intraday/HistoricalData/build_historical_db.py`
-- `Strategies/EMA-Intraday/HistoricalData/get_trade_calendar.py`
-- `Strategies/EMA-Intraday/HistoricalData/get_trade_context.py`
 - `Strategies/EMA-Intraday/HistoricalData/README.md`
 - `Strategies/EMA-Intraday/HistoricalData/Data/ema_intraday_historical.db`
 - `Strategies/EMA-Intraday/HistoricalData/Data/metadata.json`

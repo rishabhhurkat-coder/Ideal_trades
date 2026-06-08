@@ -1,9 +1,0 @@
-{
-  "symbol": "NIFTY 50",
-  "instrument_token": 256265,
-  "timeframe": "3minute",
-  "first_candle": "2021-01-01T09:15:00+0530",
-  "last_candle": "2026-06-05T13:57:00+0530",
-  "total_records": 167134,
-  "last_update": "2026-06-05T08:27:56.295Z"
-}

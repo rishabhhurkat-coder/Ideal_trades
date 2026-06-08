@@ -4,6 +4,7 @@ import { StrategyForm } from './StrategyForm';
 import { StrategyTable } from './StrategyTable';
 import { useStrategies } from './useStrategies';
 import { formatStrategyType } from './strategy';
+import { TradeEntryPage } from '../App/src/TradeEntryPage';
 
 function getSidebarInitial(label: string) {
   const trimmed = label.trim();
@@ -14,17 +15,21 @@ function StrategySidebar({
   activeStrategyName,
   collapsed,
   onMasters,
+  onTradeEntry,
   onStrategySelect,
   onToggleCollapsed,
   showMastersActive = false,
+  showTradeEntryActive = false,
   strategies,
 }: {
   activeStrategyName?: string | null;
   collapsed: boolean;
   onMasters: () => void;
+  onTradeEntry: () => void;
   onStrategySelect: (strategyName: string) => void;
   onToggleCollapsed: () => void;
   showMastersActive?: boolean;
+  showTradeEntryActive?: boolean;
   strategies: Array<{ id: string; strategy_name: string }>;
 }) {
   return (
@@ -54,6 +59,12 @@ function StrategySidebar({
           </span>
           <span className="master-nav-label">Strategy Master</span>
         </button>
+        <button className={`master-nav-item${showTradeEntryActive ? ' active' : ''}`} type="button" onClick={onTradeEntry} title="Trade Entry">
+          <span className="master-nav-icon" aria-hidden="true">
+            T
+          </span>
+          <span className="master-nav-label">Trade Entry</span>
+        </button>
       </div>
 
       <div className="master-sidebar-divider" />
@@ -80,11 +91,15 @@ function StrategySidebar({
 }
 
 export function StrategyMasterPage() {
-  const shouldOpenEmaHistoricalData =
-    typeof window !== 'undefined' && window.location.hash === '#ema-intraday-historical-data';
-  const [activePage, setActivePage] = useState<'strategy-master' | 'ema-intraday' | 'strategy-page'>(
-    shouldOpenEmaHistoricalData ? 'ema-intraday' : 'strategy-master',
-  );
+  const getInitialActivePage = () => {
+    if (typeof window === 'undefined') return 'strategy-master' as const;
+    if (window.location.hash === '#trade-entry') return 'trade-entry' as const;
+    if (window.location.hash === '#ema-intraday-historical-data') return 'ema-intraday' as const;
+    return 'strategy-master' as const;
+  };
+  const shouldOpenEmaHistoricalData = typeof window !== 'undefined' && window.location.hash === '#ema-intraday-historical-data';
+  const [activePage, setActivePage] = useState<'strategy-master' | 'ema-intraday' | 'strategy-page' | 'trade-entry'>(getInitialActivePage());
+  const isTradeEntryPage = activePage === 'trade-entry';
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isStrategyModalOpen, setIsStrategyModalOpen] = useState(false);
@@ -118,7 +133,19 @@ export function StrategyMasterPage() {
   const openStrategyMaster = () => {
     setIsStrategyModalOpen(false);
     setEditingStrategy(null);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
     setActivePage('strategy-master');
+  };
+
+  const openTradeEntry = () => {
+    setIsStrategyModalOpen(false);
+    setEditingStrategy(null);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, document.title, `${window.location.pathname}#trade-entry`);
+    }
+    setActivePage('trade-entry');
   };
 
   const handleStrategySelect = (strategyName: string) => {
@@ -192,6 +219,24 @@ export function StrategyMasterPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isStrategyModalOpen]);
 
+  useEffect(() => {
+    const syncPageFromHash = () => {
+      if (window.location.hash === '#trade-entry') {
+        setActivePage('trade-entry');
+        return;
+      }
+      if (window.location.hash === '#ema-intraday-historical-data') {
+        setActivePage('ema-intraday');
+        return;
+      }
+      setActivePage('strategy-master');
+    };
+
+    window.addEventListener('hashchange', syncPageFromHash);
+    syncPageFromHash();
+    return () => window.removeEventListener('hashchange', syncPageFromHash);
+  }, []);
+
   if (activePage === 'ema-intraday') {
     return (
       <EmaIntradayPage
@@ -203,6 +248,7 @@ export function StrategyMasterPage() {
             onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
             strategies={sidebarStrategies}
             onStrategySelect={handleStrategySelect}
+            onTradeEntry={openTradeEntry}
             onMasters={() => {
               window.history.replaceState({}, document.title, window.location.pathname);
               openStrategyMaster();
@@ -211,6 +257,10 @@ export function StrategyMasterPage() {
         }
       />
     );
+  }
+
+  if (activePage === 'trade-entry') {
+    return <TradeEntryPage />;
   }
 
   if (activePage === 'strategy-page') {
@@ -222,14 +272,15 @@ export function StrategyMasterPage() {
 
     return (
       <main className={shellClassName}>
-        <StrategySidebar
-          activeStrategyName={selectedStrategy}
-          collapsed={isSidebarCollapsed}
-          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
-          strategies={sidebarStrategies}
-          onStrategySelect={handleStrategySelect}
-          onMasters={openStrategyMaster}
-        />
+      <StrategySidebar
+        activeStrategyName={selectedStrategy}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+        strategies={sidebarStrategies}
+        onStrategySelect={handleStrategySelect}
+        onTradeEntry={openTradeEntry}
+        onMasters={openStrategyMaster}
+      />
 
         <section className="master-content">
           <section className="master-page-header">
@@ -275,8 +326,10 @@ export function StrategyMasterPage() {
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
         showMastersActive
+        showTradeEntryActive={isTradeEntryPage}
         strategies={sidebarStrategies}
         onStrategySelect={handleStrategySelect}
+        onTradeEntry={openTradeEntry}
         onMasters={() => void loadStrategies()}
       />
 
