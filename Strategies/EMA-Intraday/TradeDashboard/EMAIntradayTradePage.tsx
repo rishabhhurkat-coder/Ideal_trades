@@ -19,6 +19,8 @@ export type TradeEntryRecord = {
   entry_price: number | null;
   exit_time: string;
   exit_price: number | null;
+  pl_points: number | null;
+  pl_amount: number | null;
   pl: number | null;
 };
 
@@ -116,9 +118,18 @@ export type TradeRecordDraft = {
 
 const DEFAULT_TRADE_QUANTITY = '130';
 const EOD_EXIT_TIME = '15:27';
-const TRADE_DASHBOARD_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
+const NORMAL_ENTRY_CUTOFF_MINUTES = 9 * 60 + 30;
+const TRADE_DATA_SCHEMA = 'emaintraday';
+const TRADE_DATA_TABLE = 'trade_data';
+const TRADE_DATA_STRATEGY = 'EMA Intraday';
+const TRADE_DATA_SCRIPT = 'NIFTY';
+const LEGACY_TRADE_DASHBOARD_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
 const HIDDEN_REASON_NAMES = new Set(['CE SL Trigger', 'PE SL Trigger', 'Manual Entry']);
 let tradeCalendarRequestCount = 0;
+
+if (typeof window !== 'undefined') {
+  window.localStorage.removeItem(LEGACY_TRADE_DASHBOARD_STORAGE_KEY);
+}
 
 function nowIso() {
   return new Date().toISOString();
@@ -232,15 +243,53 @@ function normalizeDraftTrades(trades: TradeEntryDraft[]) {
     .filter(hasDraftTradeContent);
 }
 
+type TradeDataRow = {
+  id: string;
+  lifecycle_id: string;
+  strategy: string | null;
+  script: string | null;
+  trade_date: string | null;
+  expiry: string | null;
+  gap_status: string | null;
+  ema_status: string | null;
+  leg_no: number | null;
+  option_type: string | null;
+  strike: number | null;
+  quantity: number | null;
+  entry_date: string | null;
+  entry_time: string | null;
+  entry_price: number | null;
+  entry_reason: string | null;
+  exit_date: string | null;
+  exit_time: string | null;
+  exit_price: number | null;
+  exit_reason: string | null;
+  pl_points: number | null;
+  pl_amount: number | null;
+  trade_status: string | null;
+  remarks: string | null;
+  trade: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 function normalizeLoadedTrade(item: any): TradeEntryRecord | null {
   if (!item || typeof item !== 'object') return null;
 
-  const option = isTradeOption(item.option) ? item.option : isTradeOption(item.side) ? item.side : 'CE';
-  const tradeStrike = toNumberOrNull(typeof item.trade_strike === 'string' ? item.trade_strike : String(item.trade_strike ?? ''));
-  const quantity = toNumberOrNull(typeof item.quantity === 'string' ? item.quantity : String(item.quantity ?? ''));
+  const option = isTradeOption(item.option_type) ? item.option_type : isTradeOption(item.option) ? item.option : isTradeOption(item.side) ? item.side : 'CE';
+  const tradeStrike = toNumberOrNull(
+    typeof item.strike === 'number' || typeof item.strike === 'string' ? String(item.strike ?? '') : typeof item.trade_strike === 'string' ? item.trade_strike : String(item.trade_strike ?? ''),
+  );
+  const quantity = toNumberOrNull(typeof item.quantity === 'number' || typeof item.quantity === 'string' ? String(item.quantity ?? '') : String(item.quantity ?? ''));
   const entryPrice = typeof item.entry_price === 'number' && Number.isFinite(item.entry_price) ? item.entry_price : null;
   const exitPrice = typeof item.exit_price === 'number' && Number.isFinite(item.exit_price) ? item.exit_price : null;
-  const pl = typeof item.pl === 'number' && Number.isFinite(item.pl) ? item.pl : computePl(entryPrice, exitPrice, quantity);
+  const plPoints = typeof item.pl_points === 'number' && Number.isFinite(item.pl_points) ? item.pl_points : null;
+  const plAmount =
+    typeof item.pl_amount === 'number' && Number.isFinite(item.pl_amount)
+      ? item.pl_amount
+      : typeof item.pl === 'number' && Number.isFinite(item.pl)
+        ? item.pl
+        : null;
 
   const trade: TradeEntryRecord = {
     id: typeof item.id === 'string' ? item.id : uuid(),
@@ -256,106 +305,14 @@ function normalizeLoadedTrade(item: any): TradeEntryRecord | null {
         ? item.exit_time
         : typeof item.exit_reason === 'string' && item.exit_reason === 'EOD'
           ? EOD_EXIT_TIME
-          : '',
+        : '',
     exit_price: exitPrice,
-    pl,
+    pl_points: plPoints,
+    pl_amount: plAmount,
+    pl: plAmount,
   };
 
   return hasRecordTradeContent(trade) ? trade : null;
-}
-
-function normalizeLoadedLeg(item: any, fallbackLegNo: number): TradeLegRecord | null {
-  if (!item || typeof item !== 'object') return null;
-
-  if (Array.isArray(item.trades)) {
-    const trades = (item.trades as unknown[]).map(normalizeLoadedTrade).filter((trade): trade is TradeEntryRecord => trade !== null);
-    if (trades.length === 0) return null;
-    return {
-      leg_no: Number.isFinite(item.leg_no) ? Number(item.leg_no) : fallbackLegNo,
-      created_from_leg_no:
-        typeof item.created_from_leg_no === 'number' && Number.isFinite(item.created_from_leg_no) ? Number(item.created_from_leg_no) : null,
-      trigger_exit_reason: typeof item.trigger_exit_reason === 'string' ? item.trigger_exit_reason : '',
-      trades,
-    };
-  }
-
-  const legacyTrade = normalizeLoadedTrade({
-    id: item.id,
-    option: item.option ?? item.side ?? 'CE',
-    trade_strike: item.trade_strike ?? item.atm_strike,
-    quantity: item.quantity ?? 1,
-    entry_reason: item.entry_reason ?? '',
-    exit_reason: item.exit_reason ?? '',
-    entry_time: item.entry_time ?? '',
-    entry_price: item.entry_price ?? null,
-    exit_time: item.exit_time ?? '',
-    exit_price: item.exit_price ?? null,
-    pl: item.pl ?? null,
-  });
-
-  if (!legacyTrade) return null;
-  return {
-    leg_no: Number.isFinite(item.leg_no) ? Number(item.leg_no) : fallbackLegNo,
-    created_from_leg_no:
-      typeof item.created_from_leg_no === 'number' && Number.isFinite(item.created_from_leg_no) ? Number(item.created_from_leg_no) : null,
-    trigger_exit_reason: typeof item.trigger_exit_reason === 'string' ? item.trigger_exit_reason : '',
-    trades: [legacyTrade],
-  };
-}
-
-function normalizeLegacyRecord(item: any): TradeRecord | null {
-  if (!item || typeof item !== 'object') return null;
-
-  const legs: TradeLegRecord[] = [];
-  if (Array.isArray(item.legs)) {
-    item.legs.forEach((leg: any, index: number) => {
-      const normalizedLeg = normalizeLoadedLeg(leg, index + 1);
-      if (normalizedLeg) legs.push(normalizedLeg);
-    });
-  }
-
-  if (legs.length === 0) {
-    const fallbackTrade = normalizeLoadedTrade({
-      id: item.id,
-      option: item.option ?? item.side ?? 'CE',
-      trade_strike: item.trade_strike ?? item.atm_strike ?? item.track_strike,
-      quantity: item.quantity ?? 1,
-      entry_reason: item.entry_reason ?? '',
-      exit_reason: item.exit_reason ?? '',
-      entry_time: item.entry_time ?? '',
-      entry_price: item.entry_price ?? null,
-      exit_time: item.exit_time ?? '',
-      exit_price: item.exit_price ?? null,
-      pl: item.pl ?? null,
-    });
-
-    if (fallbackTrade) {
-      legs.push({
-        leg_no: 1,
-        created_from_leg_no: null,
-        trigger_exit_reason: '',
-        trades: [fallbackTrade],
-      });
-    }
-  }
-
-  if (legs.length === 0) return null;
-
-  return {
-    id: typeof item.id === 'string' ? item.id : uuid(),
-    trade_date: typeof item.trade_date === 'string' ? item.trade_date : '',
-    track_strike: typeof item.track_strike === 'number' && Number.isFinite(item.track_strike)
-      ? item.track_strike
-      : typeof item.atm_strike === 'number' && Number.isFinite(item.atm_strike)
-        ? item.atm_strike
-        : null,
-    expiry: typeof item.expiry === 'string' && item.expiry ? item.expiry : null,
-    gap_status: typeof item.gap_status === 'string' ? item.gap_status : '',
-    ema_status: typeof item.ema_status === 'string' ? item.ema_status : '',
-    legs,
-    created_at: typeof item.created_at === 'string' ? item.created_at : nowIso(),
-    updated_at: typeof item.updated_at === 'string' ? item.updated_at : nowIso(),
-  };
 }
 
 export function emptyTradeDraft(): TradeRecordDraft {
@@ -377,54 +334,6 @@ export function emptyTradeLeg(legNo: number) {
   return emptyTradeLegDraft(legNo);
 }
 
-function readStoredTradeRecords(): TradeRecord[] {
-  if (typeof window === 'undefined') return [];
-
-  const rawValue = window.localStorage.getItem(TRADE_DASHBOARD_STORAGE_KEY);
-  console.info('SAVE_T6 JSON Parse', {
-    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
-    hasValue: Boolean(rawValue),
-    rawLength: rawValue?.length ?? 0,
-  });
-
-  if (!rawValue) return [];
-
-  try {
-    const parsed = JSON.parse(rawValue) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeLegacyRecord).filter((value): value is TradeRecord => value !== null);
-  } catch (error) {
-    console.warn('Failed to parse stored trade dashboard records.', error);
-    return [];
-  }
-}
-
-function writeStoredTradeRecords(records: TradeRecord[]) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(TRADE_DASHBOARD_STORAGE_KEY, JSON.stringify(records));
-}
-
-function buildTradeRecordFromDraft(draft: TradeRecordDraft, editingId: string | null): TradeRecord {
-  const existingRecord = editingId ? readStoredTradeRecords().find((record) => record.id === editingId) ?? null : null;
-  const now = nowIso();
-
-  return {
-    id: existingRecord?.id ?? editingId ?? uuid(),
-    trade_date: draft.trade_date,
-    track_strike: toNumberOrNull(draft.track_strike),
-    expiry: draft.expiry || null,
-    gap_status: draft.gap_status,
-    ema_status: draft.ema_status,
-    legs: normalizeDraftLegs(draft.legs),
-    created_at: existingRecord?.created_at ?? now,
-    updated_at: now,
-  };
-}
-
-export async function loadTradeRecords(): Promise<TradeRecord[]> {
-  return readStoredTradeRecords();
-}
-
 function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
   return legs
     .map((leg, index) => {
@@ -433,6 +342,7 @@ function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
           const entryPrice = toNumberOrNull(trade.entry_price);
           const exitPrice = toNumberOrNull(trade.exit_price);
           const quantity = toNumberOrNull(trade.quantity);
+          const plAmount = computePl(entryPrice, exitPrice, quantity ?? 1);
           return {
             id: trade.id || uuid(),
             option: trade.option,
@@ -444,10 +354,12 @@ function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
             entry_price: entryPrice,
             exit_time: trade.exit_time,
             exit_price: exitPrice,
-            pl: computePl(entryPrice, exitPrice, quantity ?? 1),
-          };
+            pl_points: null,
+            pl_amount: plAmount,
+            pl: plAmount,
+          } satisfies TradeEntryRecord;
         })
-        .filter(hasRecordTradeContent);
+        .filter((trade) => hasRecordTradeContent(trade as TradeEntryRecord)) as TradeEntryRecord[];
 
       return trades.length > 0
         ? {
@@ -462,55 +374,215 @@ function normalizeDraftLegs(legs: TradeLegDraft[]): TradeLegRecord[] {
     .filter((leg): leg is TradeLegRecord => leg !== null);
 }
 
+function getTradeDataSchemaClient() {
+  return typeof supabase.schema === 'function' ? supabase.schema(TRADE_DATA_SCHEMA) : supabase;
+}
+
+function parseRowNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function buildTradeDataRowsFromDraft(draft: TradeRecordDraft, lifecycleId: string, existingRows: TradeDataRow[] = []) {
+  const existingRowsById = new Map(existingRows.map((row) => [row.id, row] as const));
+  const now = nowIso();
+
+  return normalizeDraftLegs(draft.legs).flatMap((leg) =>
+    leg.trades.map((trade) => {
+      const entryPrice = trade.entry_price;
+      const exitPrice = trade.exit_price;
+      const quantity = trade.quantity;
+      const points = computePoints(entryPrice, exitPrice);
+      const amount = computePl(entryPrice, exitPrice, quantity ?? 1);
+      const existingRow = existingRowsById.get(trade.id);
+      const isClosed = Boolean(trade.exit_reason.trim() || trade.exit_time.trim() || trade.exit_price !== null);
+
+      return {
+        id: trade.id,
+        lifecycle_id: lifecycleId,
+        strategy: TRADE_DATA_STRATEGY,
+        script: TRADE_DATA_SCRIPT,
+        trade_date: draft.trade_date || null,
+        expiry: draft.expiry || null,
+        gap_status: draft.gap_status || null,
+        ema_status: draft.ema_status || null,
+        leg_no: leg.leg_no,
+        option_type: trade.option,
+        strike: trade.trade_strike,
+        quantity,
+        entry_date: draft.trade_date || null,
+        entry_time: trade.entry_time || null,
+        entry_price: entryPrice,
+        entry_reason: trade.entry_reason || null,
+        exit_date: draft.trade_date || null,
+        exit_time: trade.exit_time || null,
+        exit_price: exitPrice,
+        exit_reason: trade.exit_reason || null,
+        pl_points: points,
+        pl_amount: amount,
+        trade_status: isClosed ? 'CLOSED' : 'OPEN',
+        remarks: null,
+        trade: 'SELL',
+        created_at: existingRow?.created_at ?? now,
+        updated_at: now,
+      } satisfies TradeDataRow;
+    }),
+  );
+}
+
+function groupTradeDataRows(rows: TradeDataRow[]): TradeRecord[] {
+  const recordsByLifecycle = new Map<string, TradeDataRow[]>();
+  rows.forEach((row) => {
+    const lifecycleId = row.lifecycle_id?.trim();
+    if (!lifecycleId) return;
+    const current = recordsByLifecycle.get(lifecycleId) ?? [];
+    current.push(row);
+    recordsByLifecycle.set(lifecycleId, current);
+  });
+
+  return Array.from(recordsByLifecycle.entries())
+    .map(([lifecycleId, lifecycleRows]) => {
+      const recordRows = [...lifecycleRows].sort((left, right) => {
+        const legCompare = (left.leg_no ?? 0) - (right.leg_no ?? 0);
+        if (legCompare !== 0) return legCompare;
+        const leftOption = left.option_type === 'PE' ? 1 : 0;
+        const rightOption = right.option_type === 'PE' ? 1 : 0;
+        if (leftOption !== rightOption) return leftOption - rightOption;
+        return (left.entry_time ?? '').localeCompare(right.entry_time ?? '');
+      });
+
+      const legsByNo = new Map<number, TradeDataRow[]>();
+      recordRows.forEach((row) => {
+        const legNo = parseRowNumber(row.leg_no) ?? 0;
+        const current = legsByNo.get(legNo) ?? [];
+        current.push(row);
+        legsByNo.set(legNo, current);
+      });
+
+      const legs = Array.from(legsByNo.entries())
+        .sort(([left], [right]) => left - right)
+        .map(([legNo, legRows]) => ({
+          leg_no: legNo,
+          created_from_leg_no: null,
+          trigger_exit_reason: '',
+          trades: legRows
+            .sort((left, right) => {
+              const leftOption = left.option_type === 'PE' ? 1 : 0;
+              const rightOption = right.option_type === 'PE' ? 1 : 0;
+              if (leftOption !== rightOption) return leftOption - rightOption;
+              return (left.entry_time ?? '').localeCompare(right.entry_time ?? '');
+            })
+            .map(normalizeLoadedTrade)
+            .filter((trade): trade is TradeEntryRecord => trade !== null),
+        }))
+        .filter((leg) => leg.trades.length > 0);
+
+      const firstRow = recordRows[0] ?? null;
+      const firstNonNullStrike = recordRows.find((row) => row.strike !== null)?.strike ?? null;
+      const createdAt = recordRows
+        .map((row) => row.created_at)
+        .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+        .sort((left, right) => left.localeCompare(right))[0] ?? nowIso();
+      const updatedAt = recordRows
+        .map((row) => row.updated_at)
+        .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+        .sort((left, right) => right.localeCompare(left))[0] ?? nowIso();
+
+      return {
+        id: lifecycleId,
+        trade_date: firstRow?.trade_date ?? '',
+        track_strike: firstNonNullStrike,
+        expiry: firstRow?.expiry ?? null,
+        gap_status: firstRow?.gap_status ?? '',
+        ema_status: firstRow?.ema_status ?? '',
+        legs,
+        created_at: createdAt,
+        updated_at: updatedAt,
+      };
+    })
+    .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+}
+
+async function readTradeDataRowsByLifecycleId(lifecycleId: string) {
+  const { data, error } = await getTradeDataSchemaClient()
+    .from(TRADE_DATA_TABLE)
+    .select('*')
+    .eq('lifecycle_id', lifecycleId)
+    .order('leg_no', { ascending: true })
+    .order('option_type', { ascending: true });
+
+  if (error) throw error;
+  return Array.isArray(data) ? (data as TradeDataRow[]) : [];
+}
+
+export async function loadTradeRecords(): Promise<TradeRecord[]> {
+  const { data, error } = await getTradeDataSchemaClient()
+    .from(TRADE_DATA_TABLE)
+    .select('*')
+    .order('lifecycle_id', { ascending: true })
+    .order('leg_no', { ascending: true })
+    .order('option_type', { ascending: true })
+    .order('entry_time', { ascending: true });
+
+  if (error) throw error;
+  return groupTradeDataRows(Array.isArray(data) ? (data as TradeDataRow[]) : []);
+}
+
 export async function saveTradeRecord(draft: TradeRecordDraft, editingId: string | null): Promise<TradeRecord> {
-  const record = buildTradeRecordFromDraft(draft, editingId);
+  const lifecycleId = editingId ?? uuid();
+  const existingRows = editingId ? await readTradeDataRowsByLifecycleId(lifecycleId) : [];
+  const record = {
+    id: lifecycleId,
+    trade_date: draft.trade_date,
+    track_strike: toNumberOrNull(draft.track_strike),
+    expiry: draft.expiry || null,
+    gap_status: draft.gap_status,
+    ema_status: draft.ema_status,
+    legs: normalizeDraftLegs(draft.legs),
+    created_at: existingRows[0]?.created_at ?? nowIso(),
+    updated_at: nowIso(),
+  } satisfies TradeRecord;
+  const rowsToSave = buildTradeDataRowsFromDraft(draft, lifecycleId, existingRows);
+  const rowsToSaveIds = new Set(rowsToSave.map((row) => row.id));
+
   console.info('SAVE_T2 Payload Created', {
-    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
+    table: TRADE_DATA_TABLE,
     action: editingId ? 'update' : 'create',
-    recordId: record.id,
+    lifecycleId,
+    rowCount: rowsToSave.length,
     tradeDate: record.trade_date,
     legs: record.legs.length,
   });
-  console.info('SAVE_T3 Request Sent', {
-    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
-    action: editingId ? 'update' : 'create',
-    recordId: record.id,
-  });
 
-  const records = readStoredTradeRecords();
-  const nextRecords = records.some((entry) => entry.id === record.id)
-    ? records.map((entry) => (entry.id === record.id ? record : entry))
-    : [...records, record];
-  writeStoredTradeRecords(nextRecords);
+  const db = getTradeDataSchemaClient().from(TRADE_DATA_TABLE);
+  if (rowsToSave.length > 0) {
+    const { error: upsertError } = await db.upsert(rowsToSave, { onConflict: 'id' });
+    if (upsertError) throw upsertError;
+  }
 
-  console.info('SAVE_T4 Response Status', {
-    storageKey: TRADE_DASHBOARD_STORAGE_KEY,
-    status: 'success',
-    recordCount: nextRecords.length,
+  const staleRowIds = existingRows.map((row) => row.id).filter((id) => !rowsToSaveIds.has(id));
+  if (staleRowIds.length > 0) {
+    const { error: deleteError } = await db.delete().eq('lifecycle_id', lifecycleId).in('id', staleRowIds);
+    if (deleteError) throw deleteError;
+  }
+
+  console.info('SAVE_T3 Supabase Write Complete', {
+    table: TRADE_DATA_TABLE,
+    lifecycleId,
+    rowCount: rowsToSave.length,
+    deletedRows: staleRowIds.length,
   });
-  console.info('SAVE_T5 Response Body', record);
 
   return record;
 }
 
 export async function deleteTradeEntry(recordId: string, tradeId: string) {
-  const records = readStoredTradeRecords();
-  const nextRecords = records
-    .map((record) => {
-      if (record.id !== recordId) return record;
-
-      const nextLegs = record.legs
-        .map((leg) => ({
-          ...leg,
-          trades: leg.trades.filter((trade) => trade.id !== tradeId),
-        }))
-        .filter((leg) => leg.trades.length > 0);
-
-      return nextLegs.length > 0 ? { ...record, legs: nextLegs, updated_at: nowIso() } : null;
-    })
-    .filter((record): record is TradeRecord => record !== null);
-
-  writeStoredTradeRecords(nextRecords);
+  const { error } = await getTradeDataSchemaClient().from(TRADE_DATA_TABLE).delete().eq('lifecycle_id', recordId).eq('id', tradeId);
+  if (error) throw error;
 }
 
 export async function fetchTradeCalendar(): Promise<TradeCalendarResponse> {
@@ -631,22 +703,32 @@ type TradeRow = {
 type DashboardPreset = 'all' | 'today' | 'week' | 'month' | 'profitable' | 'losing' | 'maxDd' | 'custom';
 
 type DashboardColumnKey =
+  | 'strategy'
+  | 'scrip'
+  | 'tradeDate'
   | 'expiry'
-  | 'trackStrike'
-  | 'legNo'
+  | 'trade'
   | 'option'
-  | 'tradeStrike'
+  | 'strike'
   | 'entryReason'
+  | 'entryDate'
   | 'entryTime'
   | 'entryPrice'
   | 'exitReason'
+  | 'exitDate'
   | 'exitTime'
   | 'exitPrice'
-  | 'qty'
-  | 'pl'
-  | 'ddPl'
-  | 'plAmt'
-  | 'ddAmt';
+  | 'tradeStatus'
+  | 'quantity'
+  | 'plPoints'
+  | 'plAmount'
+  | 'ddPoints'
+  | 'ddAmount'
+  | 'charges'
+  | 'netPlAmount'
+  | 'margin'
+  | 'roi'
+  | 'remarks';
 
 type DashboardRow = TradeRow & {
   qtyDisplay: number;
@@ -682,23 +764,62 @@ type TradeDashboardSettingsModalProps = {
 };
 
 const DASHBOARD_COLUMN_KEYS: DashboardColumnKey[] = [
+  'strategy',
+  'scrip',
+  'tradeDate',
   'expiry',
-  'trackStrike',
-  'legNo',
+  'trade',
   'option',
-  'tradeStrike',
+  'strike',
   'entryReason',
+  'entryDate',
   'entryTime',
   'entryPrice',
   'exitReason',
+  'exitDate',
   'exitTime',
   'exitPrice',
-  'qty',
-  'pl',
-  'ddPl',
-  'plAmt',
-  'ddAmt',
+  'tradeStatus',
+  'quantity',
+  'plPoints',
+  'plAmount',
+  'ddPoints',
+  'ddAmount',
+  'charges',
+  'netPlAmount',
+  'margin',
+  'roi',
+  'remarks',
 ];
+
+const DASHBOARD_COLUMN_LABELS: Record<DashboardColumnKey, string> = {
+  strategy: 'Strategy',
+  scrip: 'Scrip',
+  tradeDate: 'Trade Date',
+  expiry: 'Expiry',
+  trade: 'Trade',
+  option: 'Option',
+  strike: 'Strike',
+  entryReason: 'Entry Reason',
+  entryDate: 'Entry Date',
+  entryTime: 'Entry Time',
+  entryPrice: 'Entry Price',
+  exitReason: 'Exit Reason',
+  exitDate: 'Exit Date',
+  exitTime: 'Exit Time',
+  exitPrice: 'Exit Price',
+  tradeStatus: 'Trade Status',
+  quantity: 'Quantity',
+  plPoints: 'PL Points',
+  plAmount: 'PL Amount',
+  ddPoints: 'DD Points',
+  ddAmount: 'DD Amount',
+  charges: 'Charges',
+  netPlAmount: 'Net PL Amount',
+  margin: 'Margin',
+  roi: 'ROI',
+  remarks: 'Remarks',
+};
 
 const DASHBOARD_TILE_KEYS: DashboardPreset[] = ['all', 'today', 'week', 'month', 'profitable', 'losing', 'maxDd', 'custom'];
 const TRADE_DTE_OPTIONS = [0, 1, 2, 3, 4, 5];
@@ -1107,17 +1228,17 @@ function rankTimeOption(rawValue: string, timeOption: TimeOption) {
   return null;
 }
 
-function isTimeOptionAfterMin(timeOption: TimeOption, minimumValue?: string) {
+function isTimeOptionAfterMin(timeOption: TimeOption, minimumValue?: string, inclusive = false) {
   if (!minimumValue) return true;
   const normalizedMinimum = normalizeCandleTimeInput(minimumValue);
   if (!normalizedMinimum) return true;
-  return timeOption.value > normalizedMinimum;
+  return inclusive ? timeOption.value >= normalizedMinimum : timeOption.value > normalizedMinimum;
 }
 
-function getTimeSuggestions(rawValue: string, minimumValue?: string) {
+function getTimeSuggestions(rawValue: string, minimumValue?: string, inclusive = false) {
   const ranked = TIME_OPTIONS
     .map((timeOption, index) => {
-      if (!isTimeOptionAfterMin(timeOption, minimumValue)) return null;
+      if (!isTimeOptionAfterMin(timeOption, minimumValue, inclusive)) return null;
       const rank = rankTimeOption(rawValue, timeOption);
       return rank === null ? null : { timeOption, rank, index };
     })
@@ -1244,6 +1365,7 @@ type TimeInputFieldProps = {
   inputMode?: 'numeric';
   ariaLabel?: string;
   minimumValue?: string;
+  minimumInclusive?: boolean;
   onChange: (value: string) => void;
   onBlur: () => void;
 };
@@ -1257,6 +1379,7 @@ function TimeInputField({
   inputMode = 'numeric',
   ariaLabel,
   minimumValue,
+  minimumInclusive = false,
   onChange,
   onBlur,
 }: TimeInputFieldProps) {
@@ -1269,11 +1392,13 @@ function TimeInputField({
     top: number;
     width: number;
   } | null>(null);
-  const suggestions = useMemo(() => getTimeSuggestions(value, minimumValue), [minimumValue, value]);
+  const suggestions = useMemo(() => getTimeSuggestions(value, minimumValue, minimumInclusive), [minimumInclusive, minimumValue, value]);
   const isNormalized = normalizeCandleTimeInput(value) !== null;
   const normalizedMinimumValue = normalizeCandleTimeInput(minimumValue ?? '');
   const isBelowMinimum = Boolean(
-    isNormalized && normalizedMinimumValue && value <= normalizedMinimumValue,
+    isNormalized &&
+      normalizedMinimumValue &&
+      (minimumInclusive ? value < normalizedMinimumValue : value <= normalizedMinimumValue),
   );
   const isInvalid =
     value.trim() !== '' &&
@@ -2008,6 +2133,15 @@ function createTransitionTrade(option: TradeOption, entryReason: string | null, 
   };
 }
 
+function getAutoEntryReasonForLeg(legNo: number, entryTime: string) {
+  const entryMinutes = parseTimeToMinutes(entryTime);
+  if (legNo <= 1) {
+    return entryMinutes !== null && entryMinutes <= NORMAL_ENTRY_CUTOFF_MINUTES ? 'Normal Entry' : 'EMA 9 Entry';
+  }
+
+  return 'EMA 9 Entry';
+}
+
 function shiftLegMetadata(leg: TradeLegDraft, shiftFromLegNo: number, delta: number): TradeLegDraft {
   return {
     ...leg,
@@ -2172,108 +2306,72 @@ function sortTradeRowsForDashboard(rows: TradeRow[]) {
 }
 
 function buildDashboardRows(rows: TradeRow[]): DashboardRow[] {
-  const sortedForMetrics = [...rows].sort((left, right) => {
-    const leftDate = new Date(`${left.tradeDate}T00:00:00`).getTime();
-    const rightDate = new Date(`${right.tradeDate}T00:00:00`).getTime();
-    if (leftDate !== rightDate) return leftDate - rightDate;
-
-    const leftCreatedAt = new Date(left.record.created_at).getTime();
-    const rightCreatedAt = new Date(right.record.created_at).getTime();
-    if (leftCreatedAt !== rightCreatedAt) return leftCreatedAt - rightCreatedAt;
-
-    if (left.legNo !== right.legNo) return left.legNo - right.legNo;
-
-    if (left.tradeIndex !== right.tradeIndex) return left.tradeIndex - right.tradeIndex;
-
-    return left.tradeId.localeCompare(right.tradeId);
-  });
-
-  let cumulativePl = 0;
-  let cumulativeLossPoints = 0;
-  let cumulativeLossAmount = 0;
-  const metricsById = new Map<
-    string,
-    {
-      qtyDisplay: number;
-      plPoints: number;
-      ddPoints: number;
-      plAmount: number;
-      ddAmount: number;
-    }
-  >();
-
-  sortedForMetrics.forEach((row) => {
-    const plPoints = row.pl ?? 0;
-    const qtyDisplay = Math.max(1, row.trade.quantity ?? 1);
-    const plAmount = Number((plPoints * qtyDisplay).toFixed(2));
-
-    cumulativePl += plPoints;
-    if (plPoints < 0) {
-      cumulativeLossPoints += plPoints;
-      cumulativeLossAmount += plAmount;
-    }
-    const ddPoints = Number(cumulativeLossPoints.toFixed(2));
-    const ddAmount = Number(cumulativeLossAmount.toFixed(2));
-
-    metricsById.set(row.tradeId, {
-      qtyDisplay,
-      plPoints,
-      ddPoints,
-      plAmount,
-      ddAmount,
-    });
-  });
-
   return sortTradeRowsForDashboard(rows).map((row) => {
-    const metrics = metricsById.get(row.tradeId) ?? {
-      qtyDisplay: Math.max(1, row.trade.quantity ?? 1),
-      plPoints: row.pl ?? 0,
-      ddPoints: 0,
-      plAmount: Number(((row.pl ?? 0) * Math.max(1, row.trade.quantity ?? 1)).toFixed(2)),
-      ddAmount: 0,
-    };
-
     return {
       ...row,
-      ...metrics,
+      qtyDisplay: Math.max(1, row.trade.quantity ?? 1),
+      plPoints: row.trade.pl_points ?? 0,
+      ddPoints: 0,
+      plAmount: row.trade.pl_amount ?? 0,
+      ddAmount: 0,
     };
   });
 }
 
 function getDashboardValue(row: DashboardRow, key: DashboardColumnKey) {
   switch (key) {
+    case 'strategy':
+      return TRADE_DATA_STRATEGY;
+    case 'scrip':
+      return TRADE_DATA_SCRIPT;
+    case 'tradeDate':
+      return row.tradeDate;
     case 'expiry':
       return row.expiry || '-';
-    case 'trackStrike':
-      return row.trackStrike === null ? '-' : String(row.trackStrike);
-    case 'legNo':
-      return String(row.legNo);
+    case 'trade':
+      return 'SELL';
     case 'option':
       return row.option;
-    case 'tradeStrike':
+    case 'strike':
       return row.tradeStrike === null ? '-' : String(row.tradeStrike);
     case 'entryReason':
       return row.entryReason || '-';
+    case 'entryDate':
+      return row.tradeDate || '-';
     case 'entryTime':
       return row.entryTime || '-';
     case 'entryPrice':
       return formatPrice(row.entryPrice);
     case 'exitReason':
       return row.exitReason || '-';
+    case 'exitDate':
+      return row.tradeDate || '-';
     case 'exitTime':
       return row.exitTime || '-';
     case 'exitPrice':
       return formatPrice(row.exitPrice);
-    case 'qty':
+    case 'tradeStatus':
+      return row.trade.exit_reason || row.trade.exit_time || row.trade.exit_price !== null ? 'CLOSED' : 'OPEN';
+    case 'quantity':
       return String(row.qtyDisplay);
-    case 'pl':
+    case 'plPoints':
       return formatDashboardNumber(row.plPoints);
-    case 'ddPl':
-      return formatDashboardNumber(row.ddPoints);
-    case 'plAmt':
+    case 'plAmount':
       return formatDashboardNumber(row.plAmount);
-    case 'ddAmt':
+    case 'ddPoints':
+      return formatDashboardNumber(row.ddPoints);
+    case 'ddAmount':
       return formatDashboardNumber(row.ddAmount);
+    case 'charges':
+      return '-';
+    case 'netPlAmount':
+      return '-';
+    case 'margin':
+      return '-';
+    case 'roi':
+      return '-';
+    case 'remarks':
+      return '-';
     default:
       return '-';
   }
@@ -2452,12 +2550,15 @@ function TradeModal({
         delete next[key];
         return next;
       });
-      onUpdateDraft((current) =>
-        updateTradeInLeg(current, activeLegIndex, tradeIndex, (trade) => ({
+      onUpdateDraft((current) => {
+        const updatedDraft = updateTradeInLeg(current, activeLegIndex, tradeIndex, (trade) => ({
           ...trade,
           [field]: normalized,
-        })),
-      );
+        }));
+        return field === 'entry_time'
+          ? applyAutoEntryReasonToDraft(updatedDraft, activeLegIndex, tradeIndex, normalized)
+          : updatedDraft;
+      });
       return;
     }
 
@@ -2471,12 +2572,15 @@ function TradeModal({
 
     const normalized = normalizeCandleTimeInput(draftValue);
     if (normalized !== null) {
-      onUpdateDraft((current) =>
-        updateTradeInLeg(current, activeLegIndex, tradeIndex, (trade) => ({
+      onUpdateDraft((current) => {
+        const updatedDraft = updateTradeInLeg(current, activeLegIndex, tradeIndex, (trade) => ({
           ...trade,
           [field]: normalized,
-        })),
-      );
+        }));
+        return field === 'entry_time'
+          ? applyAutoEntryReasonToDraft(updatedDraft, activeLegIndex, tradeIndex, normalized)
+          : updatedDraft;
+      });
       setTimeDrafts((current) => {
         const next = { ...current };
         delete next[key];
@@ -2563,6 +2667,7 @@ function TradeModal({
 
   const activeLeg = draft.legs[activeLegIndex] ?? draft.legs[0];
   const activeTradeCount = activeLeg?.trades.length ?? 0;
+  const activeLegEntryMinimumTime = getPreviousLegExitTime(draft.legs, activeLegIndex, (leg) => leg.trades.map((trade) => trade.exit_time));
   const isEntryStage = flowStage === 'entry';
   const isExitStage = flowStage === 'exit';
   const isSetupReady = Boolean(
@@ -3177,6 +3282,8 @@ function TradeModal({
                                   inputClassName="trade-theme-control"
                                   value={timeDrafts[createTimeDraftKey(trade.id, tradeIndex, 'entryTime')] ?? trade.entry_time}
                                   placeholder="09:18"
+                                  minimumValue={activeLegEntryMinimumTime}
+                                  minimumInclusive
                                   onChange={(nextValue) => handleTimeDraftChange(tradeIndex, 'entry_time', nextValue)}
                                   onBlur={() => handleTimeDraftBlur(tradeIndex, 'entry_time')}
                                 />
@@ -3685,10 +3792,18 @@ export function EMAIntradayTradePage() {
   const dashboardRows = useMemo(() => buildDashboardRows(tradeRows), [tradeRows]);
   const [activePreset, setActivePreset] = useState<DashboardPreset>('all');
   const [openFilterColumn, setOpenFilterColumn] = useState<DashboardColumnKey | null>(null);
+  const [openColumnSelector, setOpenColumnSelector] = useState(false);
   const [appliedColumnFilters, setAppliedColumnFilters] = useState<ColumnFilterMap>(() => createEmptyColumnFilters());
   const [draftColumnFilters, setDraftColumnFilters] = useState<ColumnFilterMap>(() => createEmptyColumnFilters());
   const [filterSearch, setFilterSearch] = useState('');
-  const expiryFilterAutoOpenedRef = useRef(false);
+  const [visibleColumns, setVisibleColumns] = useState<Record<DashboardColumnKey, boolean>>(() =>
+    DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
+      accumulator[key] = true;
+      return accumulator;
+    }, {} as Record<DashboardColumnKey, boolean>),
+  );
+  const visibleDashboardColumns = DASHBOARD_COLUMN_KEYS.filter((key) => visibleColumns[key]);
+  const visibleDashboardColumnCount = Math.max(visibleDashboardColumns.length, 1);
 
   const allColumnValues = useMemo(() => {
     return DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
@@ -3773,16 +3888,6 @@ export function EMAIntradayTradePage() {
   const totalDays = new Set(visibleRows.map((row) => row.tradeDate)).size;
 
   useEffect(() => {
-    if (expiryFilterAutoOpenedRef.current || dashboardRows.length === 0) return;
-    setOpenFilterColumn('expiry');
-    setDraftColumnFilters((current) => ({
-      ...current,
-      expiry: allColumnValues.expiry,
-    }));
-    expiryFilterAutoOpenedRef.current = true;
-  }, [allColumnValues.expiry, dashboardRows.length]);
-
-  useEffect(() => {
     if (!openFilterColumn) {
       setFilterSearch('');
       return;
@@ -3834,6 +3939,26 @@ export function EMAIntradayTradePage() {
       ...current,
       [column]: values,
     }));
+  }
+
+  function toggleDashboardColumnVisibility(column: DashboardColumnKey) {
+    setVisibleColumns((current) => {
+      const visibleCount = DASHBOARD_COLUMN_KEYS.filter((key) => current[key]).length;
+      if (current[column] && visibleCount <= 1) return current;
+      return {
+        ...current,
+        [column]: !current[column],
+      };
+    });
+  }
+
+  function resetDashboardColumns() {
+    setVisibleColumns(
+      DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
+        accumulator[key] = true;
+        return accumulator;
+      }, {} as Record<DashboardColumnKey, boolean>),
+    );
   }
 
   async function refreshRecords() {
@@ -3919,6 +4044,24 @@ export function EMAIntradayTradePage() {
         nextStage,
         tradeDate: draft.trade_date,
       });
+      if (nextStage !== 'close') {
+        if (nextStage === 'entry') {
+          setFlowStage('entry');
+          setSelectedTradeId(draft.legs[0]?.trades[0]?.id ?? null);
+        } else if (nextStage === 'exit') {
+          const nextLeg = draft.legs[draft.legs.length - 1] ?? draft.legs[0] ?? null;
+          const nextLegTradeId = nextLeg?.trades[0]?.id ?? null;
+          if (draft.legs.length > 1 && nextLegTradeId) {
+            setFlowStage('entry');
+            setSelectedTradeId(nextLegTradeId);
+          } else {
+            setFlowStage('exit');
+            setSelectedTradeId(draft.legs[0]?.trades[0]?.id ?? null);
+          }
+        }
+        return;
+      }
+
       const savedRecord = await saveTradeRecord(draft, editingId);
       const selectedTradeQuantity =
         selectedTradeId !== null
@@ -3931,22 +4074,7 @@ export function EMAIntradayTradePage() {
         setEditingId(savedRecord.id);
       }
       await refreshRecords();
-      if (nextStage === 'entry') {
-        setFlowStage('entry');
-        setSelectedTradeId(savedRecord.legs[0]?.trades[0]?.id ?? null);
-      } else if (nextStage === 'exit') {
-        const nextLeg = savedRecord.legs[savedRecord.legs.length - 1] ?? savedRecord.legs[0] ?? null;
-        const nextLegTradeId = nextLeg?.trades[0]?.id ?? null;
-        if (savedRecord.legs.length > 1 && nextLegTradeId) {
-          setFlowStage('entry');
-          setSelectedTradeId(nextLegTradeId);
-        } else {
-          setFlowStage('exit');
-          setSelectedTradeId(savedRecord.legs[0]?.trades[0]?.id ?? null);
-        }
-      } else {
-        closeModal();
-      }
+      closeModal();
     } catch (currentError) {
       setError(currentError instanceof Error ? currentError.message : 'Unable to save leg day.');
     } finally {
@@ -4033,14 +4161,107 @@ export function EMAIntradayTradePage() {
     );
   }
 
+  function renderDashboardCell(row: DashboardRow, column: DashboardColumnKey) {
+    switch (column) {
+      case 'strategy':
+        return <td key={column}>{TRADE_DATA_STRATEGY}</td>;
+      case 'scrip':
+        return <td key={column}>{TRADE_DATA_SCRIPT}</td>;
+      case 'tradeDate':
+        return <td key={column}>{row.tradeDate}</td>;
+      case 'expiry':
+        return <td key={column}>{row.expiry}</td>;
+      case 'trade':
+        return <td key={column}>SELL</td>;
+      case 'option':
+        return <td key={column}>{row.option}</td>;
+      case 'strike':
+        return <td key={column} className="trade-table-emphasis">{row.tradeStrike ?? '-'}</td>;
+      case 'entryReason':
+        return <td key={column}>{row.entryReason || '-'}</td>;
+      case 'entryDate':
+        return <td key={column}>{row.tradeDate}</td>;
+      case 'entryTime':
+        return <td key={column}>{row.entryTime || '-'}</td>;
+      case 'entryPrice':
+        return <td key={column}>{formatPrice(row.entryPrice)}</td>;
+      case 'exitReason':
+        return <td key={column}>{row.exitReason || '-'}</td>;
+      case 'exitDate':
+        return <td key={column}>{row.tradeDate}</td>;
+      case 'exitTime':
+        return <td key={column}>{row.exitTime || '-'}</td>;
+      case 'exitPrice':
+        return <td key={column}>{formatPrice(row.exitPrice)}</td>;
+      case 'tradeStatus':
+        return <td key={column}>{row.trade.exit_reason || row.trade.exit_time || row.trade.exit_price !== null ? 'CLOSED' : 'OPEN'}</td>;
+      case 'quantity':
+        return <td key={column}>{row.qtyDisplay}</td>;
+      case 'plPoints':
+        return <td key={column} className={row.plPoints >= 0 ? 'trade-positive' : 'trade-negative'}>{formatDashboardNumber(row.plPoints)}</td>;
+      case 'plAmount':
+        return <td key={column} className={row.plAmount >= 0 ? 'trade-positive' : 'trade-negative'}>{formatSignedCurrency(row.plAmount)}</td>;
+      case 'ddPoints':
+        return <td key={column} className={row.ddPoints < 0 ? 'trade-dd' : ''}>{formatDashboardNumber(row.ddPoints)}</td>;
+      case 'ddAmount':
+        return <td key={column} className="trade-negative">{formatSignedCurrency(row.ddAmount)}</td>;
+      case 'charges':
+        return <td key={column}>-</td>;
+      case 'netPlAmount':
+        return <td key={column}>-</td>;
+      case 'margin':
+        return <td key={column}>-</td>;
+      case 'roi':
+        return <td key={column}>-</td>;
+      case 'remarks':
+        return <td key={column}>-</td>;
+      default:
+        return null;
+    }
+  }
+
   return (
     <section className="trade-dashboard">
       <section className="trade-log-card">
         <div className="trade-log-card-heading">
-          <h3>Leg Log</h3>
-          <button className="button primary trade-add-day-button" type="button" onClick={beginAddTradeDay}>
-            <span>+Leg</span>
-          </button>
+          <h3 className="trade-log-card-title">Trades</h3>
+          <div className="trade-log-card-heading-actions">
+            <div className="trade-column-selector-shell">
+              <button
+                className={`button secondary trade-column-selector-button${openColumnSelector ? ' active' : ''}`}
+                type="button"
+                onClick={() => setOpenColumnSelector((current) => !current)}
+                aria-label="Choose visible columns"
+              >
+                Columns
+              </button>
+              {openColumnSelector ? (
+                <div className="trade-column-selector-popover">
+                  <div className="trade-column-selector-header">
+                    <strong>Visible Columns</strong>
+                    <button className="button secondary trade-column-selector-reset" type="button" onClick={resetDashboardColumns}>
+                      Reset
+                    </button>
+                  </div>
+                  <div className="trade-column-selector-list">
+                    {DASHBOARD_COLUMN_KEYS.map((column) => (
+                      <label key={column} className="trade-column-selector-item">
+                        <input
+                          type="checkbox"
+                          checked={visibleColumns[column]}
+                          onChange={() => toggleDashboardColumnVisibility(column)}
+                        />
+                        <span>{DASHBOARD_COLUMN_LABELS[column]}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <button className="button primary trade-add-day-button" type="button" onClick={beginAddTradeDay}>
+              <span>+ Trade</span>
+            </button>
+          </div>
         </div>
 
         {error ? <div className="alert trade-alert">{error}</div> : null}
@@ -4049,28 +4270,13 @@ export function EMAIntradayTradePage() {
           <table className="trade-data-table">
             <thead>
               <tr>
-                {renderFilterHeader('expiry', 'Expiry')}
-                {renderFilterHeader('trackStrike', 'Track Strike')}
-                {renderFilterHeader('legNo', 'Leg No')}
-                {renderFilterHeader('option', 'Option')}
-                {renderFilterHeader('tradeStrike', 'Leg Strike')}
-                {renderFilterHeader('entryReason', 'Entry Reason')}
-                {renderFilterHeader('entryTime', 'Entry Time')}
-                {renderFilterHeader('entryPrice', 'Entry Price')}
-                {renderFilterHeader('exitReason', 'Exit Reason')}
-                {renderFilterHeader('exitTime', 'Exit Time')}
-                {renderFilterHeader('exitPrice', 'Exit Price')}
-                {renderFilterHeader('qty', 'Qty')}
-                {renderFilterHeader('pl', 'PL')}
-                {renderFilterHeader('ddPl', 'DD PL')}
-                {renderFilterHeader('plAmt', 'PL Amt')}
-                {renderFilterHeader('ddAmt', 'DD Amt')}
+                {visibleDashboardColumns.map((column) => renderFilterHeader(column, DASHBOARD_COLUMN_LABELS[column]))}
               </tr>
             </thead>
             <tbody>
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td className="empty-cell" colSpan={16}>
+                  <td className="empty-cell" colSpan={visibleDashboardColumnCount}>
                     No legs match the current filters.
                   </td>
                 </tr>
@@ -4090,22 +4296,7 @@ export function EMAIntradayTradePage() {
                     }}
                     title="Open leg summary"
                   >
-                    <td>{row.expiry}</td>
-                    <td className="trade-table-emphasis">{row.trackStrike ?? '-'}</td>
-                    <td>{row.legNo}</td>
-                    <td>{row.option}</td>
-                    <td className="trade-table-emphasis">{row.tradeStrike ?? '-'}</td>
-                    <td>{row.entryReason || '-'}</td>
-                    <td>{row.entryTime || '-'}</td>
-                    <td>{formatPrice(row.entryPrice)}</td>
-                    <td>{row.exitReason || '-'}</td>
-                    <td>{row.exitTime || '-'}</td>
-                    <td>{formatPrice(row.exitPrice)}</td>
-                    <td>{row.qtyDisplay}</td>
-                    <td className={row.plPoints >= 0 ? 'trade-positive' : 'trade-negative'}>{formatDashboardNumber(row.plPoints)}</td>
-                    <td className={row.ddPoints < 0 ? 'trade-dd' : ''}>{formatDashboardNumber(row.ddPoints)}</td>
-                    <td className={row.plAmount >= 0 ? 'trade-positive' : 'trade-negative'}>{formatSignedCurrency(row.plAmount)}</td>
-                    <td className="trade-negative">{formatSignedCurrency(row.ddAmount)}</td>
+                    {visibleDashboardColumns.map((column) => renderDashboardCell(row, column))}
                   </tr>
                 ))
               )}
@@ -4154,7 +4345,7 @@ export function EMAIntradayTradePage() {
           }
           void handleSave('close');
         }}
-        onSaveAndExit={() => void handleSave('exit')}
+        onSaveAndExit={() => void handleSave('close')}
       />
       <TradeDashboardSettingsModal open={settingsOpen} settings={tradeDashboardSettings} onClose={closeSettings} onSave={saveSettings} />
     </section>
@@ -4263,6 +4454,70 @@ function preserveCardExpansionState(nextCards: TradeCardState[], previousCards: 
     ...card,
     expanded: previousExpansionById.get(card.id) ?? card.expanded,
   }));
+}
+
+function applyAutoEntryReasonToDraft(
+  draft: TradeRecordDraft,
+  legIndex: number,
+  tradeIndex: number,
+  entryTime: string,
+) {
+  const leg = draft.legs[legIndex];
+  const trade = leg?.trades[tradeIndex];
+  if (!leg || !trade || trade.entry_reason.trim()) return draft;
+
+  const nextEntryReason = getAutoEntryReasonForLeg(leg.leg_no, entryTime);
+  if (!nextEntryReason) return draft;
+
+  return updateTradeInLeg(draft, legIndex, tradeIndex, (currentTrade) => {
+    if (currentTrade.entry_reason.trim()) return currentTrade;
+    return {
+      ...currentTrade,
+      entry_reason: nextEntryReason,
+    };
+  });
+}
+
+function applyAutoEntryReasonToCard(card: TradeCardState, rowIndex: number, entryTime: string) {
+  const row = card.rows[rowIndex];
+  if (!row || row.entryReason.trim()) return card;
+
+  const nextEntryReason = getAutoEntryReasonForLeg(card.legNo, entryTime);
+  if (!nextEntryReason) return card;
+
+  return {
+    ...card,
+    rows: card.rows.map((currentRow, index) =>
+      index === rowIndex
+        ? {
+            ...currentRow,
+            entryReason: nextEntryReason,
+          }
+        : currentRow,
+    ),
+  };
+}
+
+const LEG_ENTRY_CHAIN_START_TIME = '09:15';
+
+function getPreviousLegExitTime<T>(legs: T[], legIndex: number, getExitTimes: (leg: T) => string[]) {
+  if (legIndex <= 0) return LEG_ENTRY_CHAIN_START_TIME;
+
+  for (let index = legIndex - 1; index >= 0; index -= 1) {
+    const leg = legs[index];
+    if (!leg) continue;
+
+    const exitTimes = getExitTimes(leg)
+      .map((time) => time.trim())
+      .filter((time) => time)
+      .sort((left, right) => left.localeCompare(right));
+
+    if (exitTimes.length > 0) {
+      return exitTimes[exitTimes.length - 1];
+    }
+  }
+
+  return LEG_ENTRY_CHAIN_START_TIME;
 }
 
 function tradeCardsToDraftLegs(cards: TradeCardState[], quantity: string): TradeLegDraft[] {
@@ -4556,7 +4811,25 @@ function TradeEntryPage({
         delete next[key];
         return next;
       });
-      updateTradeRow(cardId, rowIndex, field, normalized);
+      setCards((currentCards) =>
+        currentCards.map((card) =>
+          card.id === cardId
+            ? field === 'entryTime'
+              ? applyAutoEntryReasonToCard(
+                  {
+                    ...card,
+                    rows: card.rows.map((row, index) => (index === rowIndex ? { ...row, [field]: normalized } : row)),
+                  },
+                  rowIndex,
+                  normalized,
+                )
+              : {
+                  ...card,
+                  rows: card.rows.map((row, index) => (index === rowIndex ? { ...row, [field]: normalized } : row)),
+                }
+            : card,
+        ),
+      );
       return;
     }
 
@@ -4571,7 +4844,25 @@ function TradeEntryPage({
 
     const normalized = normalizeCandleTimeInput(draftValue);
     if (normalized !== null) {
-      updateTradeRow(cardId, rowIndex, field, normalized);
+      setCards((currentCards) =>
+        currentCards.map((card) =>
+          card.id === cardId
+            ? field === 'entryTime'
+              ? applyAutoEntryReasonToCard(
+                  {
+                    ...card,
+                    rows: card.rows.map((row, index) => (index === rowIndex ? { ...row, [field]: normalized } : row)),
+                  },
+                  rowIndex,
+                  normalized,
+                )
+              : {
+                  ...card,
+                  rows: card.rows.map((row, index) => (index === rowIndex ? { ...row, [field]: normalized } : row)),
+                }
+            : card,
+        ),
+      );
       setTimeDrafts((current) => {
         const next = { ...current };
         delete next[key];
@@ -4809,27 +5100,14 @@ function TradeEntryPage({
           {cards.map((card) => {
             const totalPnl = getCardTotalPnl(card);
             const totalPnlDisplay = totalPnl === null ? '--' : formatSignedCurrency(totalPnl);
+            const legIndex = cards.findIndex((entry) => entry.id === card.id);
+            const legEntryMinimumTime = getPreviousLegExitTime(cards, legIndex, (leg) => leg.rows.map((row) => row.exitTime));
             return (
               <article key={card.id} className={`trade-card${card.expanded ? ' trade-card--expanded' : ''}`}>
                 <div className="trade-card-header">
-                  <div className="trade-card-title-group">
-                    <div style={{ display: 'grid', gap: '4px' }}>
-                      <h2 className="trade-card-title">{card.title}</h2>
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          gap: '10px',
-                          color: '#54645f',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        <span>Leg No: {card.legNo}</span>
-                        <span>Created From Leg #: {card.createdFromLegNo ?? '--'}</span>
-                        <span>Trigger Exit Reason: {card.triggerExitReason || '--'}</span>
-                      </div>
+                    <div className="trade-card-title-group">
+                      <div style={{ display: 'grid', gap: '4px' }}>
+                        <h2 className="trade-card-title">{card.title}</h2>
                     </div>
                     <div className="trade-card-total">
                       <span>Leg P&amp;L:</span>
@@ -4899,6 +5177,8 @@ function TradeEntryPage({
                                   <TimeInputField
                                     inputClassName="trade-input"
                                     value={timeDrafts[getTimeDraftKey(card.id, rowIndex, 'entryTime')] ?? row.entryTime}
+                                    minimumValue={legEntryMinimumTime}
+                                    minimumInclusive
                                     onChange={(nextValue) => handleTimeDraftChange(card.id, rowIndex, 'entryTime', nextValue)}
                                     onBlur={() => handleTimeDraftBlur(card.id, rowIndex, 'entryTime')}
                                   />
