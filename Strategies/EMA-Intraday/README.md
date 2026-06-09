@@ -16,7 +16,7 @@ Strategy-specific files for the EMA Intraday workflow live here.
 - `config.ts`
 - `parameters.md`
 - `strategy rules.md`
-- `EmaIntradayPage.tsx`
+- `TradeDashboard/EmaIntradayPage.tsx`
 - `Masters/masters.ts`
 - `Masters/mastersService.ts`
 - `Masters/useMasters.ts`

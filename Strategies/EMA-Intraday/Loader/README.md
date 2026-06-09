@@ -60,6 +60,11 @@ Optional:
 - `LOADER_LOG_DIR`
 - `LOADER_DRY_RUN`
 
+`UNIVERSE_CONFIG_NAME=Default` is treated as the always-on baseline range:
+
+- `from_date = 2021-01-01`
+- `to_date = current date at runtime`
+
 ## Running
 
 From this folder:

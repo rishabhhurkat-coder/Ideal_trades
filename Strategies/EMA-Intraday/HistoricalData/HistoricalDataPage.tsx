@@ -1,18 +1,47 @@
-﻿import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { DEFAULT_KITE_LOGIN_URL, KiteConnectService } from './KiteConnectService';
-import type { KiteAuthState, ManualHistoricalDownloadResponse, NiftyMarketStateResponse } from './types';
+import { useEffect, useState } from 'react';
 import { readNiftyMarketState } from '../../../Helper/Supabase/emaIntradayHistorical';
 import { supabase } from '../../../Helper/Supabase/supabaseClient';
+import type { NiftyMarketStateResponse } from './types';
 
-type DownloadStatus =
-  | 'idle'
-  | 'checking'
-  | 'login_required'
-  | 'generating_session'
-  | 'downloading'
-  | 'saving'
-  | 'completed'
-  | 'error';
+type HistoricalDataPageProps = {
+  onOpenPendingDates?: () => void;
+  refreshToken?: number;
+};
+
+type RefreshStage = 'idle' | 'starting' | 'running' | 'success' | 'error';
+
+type LatestRefreshSummary = {
+  referenceDate?: string;
+  expiry?: string;
+  rawCandles?: number;
+  rowsUpserted?: number;
+  tempFile?: string;
+};
+
+type LatestRefreshLogEntry = {
+  title: string;
+  detail: string;
+  durationMs?: number;
+  value?: string;
+};
+
+const REFRESH_STEPS = [
+  {
+    key: 'request',
+    label: 'Request refresh',
+    detail: 'The page calls the local refresh endpoint.',
+  },
+  {
+    key: 'kite',
+    label: 'Download candles',
+    detail: 'Python reads the Kite session, fetches the latest candles, and writes the temp file.',
+  },
+  {
+    key: 'write',
+    label: 'Write Supabase rows',
+    detail: 'The refreshed `date_selection` rows are saved back to Supabase and pending dates are checked.',
+  },
+] as const;
 
 function formatAvailableUpTo(dateTime: string | null | undefined): string {
   if (!dateTime) return '-';
@@ -54,44 +83,17 @@ function OptionsIcon() {
   );
 }
 
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 5v5.17l3.41 2.41-1.16 1.64L11 13V7h2Z" />
-    </svg>
-  );
+function formatDurationMs(durationMs?: number): string {
+  if (durationMs === undefined || Number.isNaN(durationMs)) return '-';
+  return `${Math.max(0, Math.round(durationMs))} ms`;
 }
 
-function ConstructionIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M13.5 2 6 9.5v5l-2 2V21h4.5l2-2h5L21 11.5V6l-7.5-4ZM8 19.17 4.83 16H7l1 1v2.17ZM18 10l-7 7h-2l-2-2v-2l7-7 4 4Z" />
-    </svg>
-  );
-}
-
-export function HistoricalDataPage() {
-  const kiteConnectService = useMemo(() => new KiteConnectService(), []);
-  const [authState, setAuthState] = useState<KiteAuthState>(() => kiteConnectService.getAuthState());
-  const [requestTokenInput, setRequestTokenInput] = useState(() => kiteConnectService.getAuthState().requestToken ?? '');
-  const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>('idle');
-  const [downloadMessage, setDownloadMessage] = useState('Ready to update Supabase NIFTY 50 3 Minute history.');
-  const [downloadResult, setDownloadResult] = useState<ManualHistoricalDownloadResponse | null>(null);
+export function HistoricalDataPage({ onOpenPendingDates, refreshToken = 0 }: HistoricalDataPageProps) {
   const [marketState, setMarketState] = useState<NiftyMarketStateResponse | null>(null);
-  const [pendingDownloadAfterAuth, setPendingDownloadAfterAuth] = useState(false);
-  const [updateOptionsMessage, setUpdateOptionsMessage] = useState('');
-  const loginWindowRef = useRef<Window | null>(null);
-
-  const isBusy =
-    downloadStatus === 'checking' ||
-    downloadStatus === 'generating_session' ||
-    downloadStatus === 'downloading' ||
-    downloadStatus === 'saving';
-  const needsRequestToken = downloadStatus === 'login_required' || pendingDownloadAfterAuth;
-  const metadata = downloadResult?.metadata;
-  const dataAvailableUpTo = formatAvailableUpTo(marketState?.lastCandle ?? metadata?.last_candle);
-  const cashDataSynced = dataAvailableUpTo;
-  const authStatusLabel = authState.connected ? 'Connected' : authState.requestToken ? 'Token Ready' : 'Not Connected';
+  const [latestDownloadStatus, setLatestDownloadStatus] = useState<RefreshStage>('idle');
+  const [latestDownloadMessage, setLatestDownloadMessage] = useState<string | null>(null);
+  const [latestDownloadSummary, setLatestDownloadSummary] = useState<LatestRefreshSummary | null>(null);
+  const [latestDownloadLog, setLatestDownloadLog] = useState<LatestRefreshLogEntry[]>([]);
 
   useEffect(() => {
     void readNiftyMarketState(supabase)
@@ -101,121 +103,160 @@ export function HistoricalDataPage() {
       .catch(() => {
         // Supabase state is optional before the first download.
       });
+  }, [refreshToken]);
 
-    void kiteConnectService
-      .verifyConnection()
-      .then(setAuthState)
-      .catch(() => {
-        // The one-button flow performs a fresh session check before downloading.
+  const cashDataSynced = formatAvailableUpTo(marketState?.lastCandle);
+  const latestDownloadProgress =
+    latestDownloadStatus === 'idle' ? 0 : latestDownloadStatus === 'starting' ? 22 : latestDownloadStatus === 'running' ? 66 : 100;
+  const latestDownloadHeadline =
+    latestDownloadStatus === 'idle'
+      ? 'Ready to refresh the latest date selection rows.'
+      : latestDownloadMessage ?? 'Refreshing latest data...';
+
+  function getStepState(stepIndex: number): 'complete' | 'active' | 'idle' {
+    if (latestDownloadStatus === 'idle' || latestDownloadStatus === 'error') return 'idle';
+    if (latestDownloadStatus === 'success') return 'complete';
+    if (stepIndex === 0) return 'complete';
+    if (stepIndex === 1 && latestDownloadStatus === 'running') return 'active';
+    if (stepIndex === 2 && latestDownloadStatus === 'running') return 'idle';
+    return stepIndex <= 0 ? 'complete' : 'idle';
+  }
+
+  async function handleLatestDownload() {
+    if (latestDownloadStatus === 'running' || latestDownloadStatus === 'starting') return;
+
+    setLatestDownloadStatus('starting');
+    setLatestDownloadMessage('Preparing the refresh request...');
+    setLatestDownloadSummary(null);
+    setLatestDownloadLog([
+      {
+        title: 'Prepare request',
+        detail: 'Reset the previous run state and get the refresh flow ready.',
+      },
+    ]);
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    try {
+      const refreshStart = performance.now();
+      setLatestDownloadStatus('running');
+      setLatestDownloadMessage('Refreshing latest data on the server...');
+      const response = await fetch('/api/ema-intraday/latest-date-refresh', {
+        method: 'POST',
       });
-  }, [kiteConnectService]);
+      const refreshDurationMs = performance.now() - refreshStart;
+      const result = (await response.json()) as {
+        status?: string;
+        message?: string;
+        summary?: LatestRefreshSummary;
+      };
 
-  async function openKiteLoginForToken(message: string, preopenedWindow: Window | null = null) {
-    setPendingDownloadAfterAuth(true);
-    setDownloadStatus('login_required');
-    setDownloadMessage(message);
-
-    try {
-      await kiteConnectService.startLogin(preopenedWindow);
-    } catch (error) {
-      setDownloadStatus('error');
-      setDownloadMessage(error instanceof Error ? error.message : 'Unable to open Kite login.');
-    }
-  }
-
-  async function downloadMissingHistoricalData() {
-    setDownloadStatus('downloading');
-    setDownloadMessage('Downloading missing NIFTY 50 3 Minute candles...');
-
-    const response = await fetch('/api/kite/historical-candles', {
-      method: 'POST',
-      credentials: 'include',
-    });
-    const result = (await response.json()) as ManualHistoricalDownloadResponse;
-
-    if (response.status === 401 || response.status === 403) {
-      await openKiteLoginForToken(
-        result.message ?? 'Session expired. Kite login opened in a new tab; paste request_token to continue.',
-        loginWindowRef.current,
-      );
-      return false;
-    }
-
-    if (!response.ok || result.status !== 'success') {
-      throw new Error(result.message ?? `Historical API failure with HTTP ${response.status}.`);
-    }
-
-    setDownloadStatus('saving');
-    setDownloadMessage('Writing historical candles directly to Supabase...');
-    setDownloadResult(result);
-    if (result.state) setMarketState(result.state);
-    setDownloadStatus('completed');
-    setDownloadMessage('Completed.');
-    return true;
-  }
-
-  async function handleDownloadData() {
-    setPendingDownloadAfterAuth(false);
-    setDownloadStatus('checking');
-    setDownloadMessage('Checking Session...');
-
-    try {
-      loginWindowRef.current?.close();
-      loginWindowRef.current = null;
-
-      const currentAuthState = await kiteConnectService.verifyConnection();
-      setAuthState(currentAuthState);
-
-      if (currentAuthState.connected) {
-        await downloadMissingHistoricalData();
-        return;
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(result.message ?? `Latest data refresh failed with HTTP ${response.status}.`);
       }
 
-      await openKiteLoginForToken('No active Kite session found. Kite login opened in a new tab; paste request_token to continue.');
-    } catch (error) {
-      loginWindowRef.current?.close();
-      loginWindowRef.current = null;
-      setDownloadStatus('error');
-      setDownloadMessage(error instanceof Error ? error.message : 'Historical download failed.');
-    }
-  }
+      setLatestDownloadStatus('success');
+      setLatestDownloadMessage(result.message ?? 'Latest data refreshed successfully.');
+      setLatestDownloadSummary(result.summary ?? null);
+      setLatestDownloadLog([
+        {
+          title: 'Request latest refresh',
+          detail: 'POST /api/ema-intraday/latest-date-refresh',
+          durationMs: refreshDurationMs,
+          value: result.message ?? 'Latest data refreshed successfully.',
+        },
+        {
+          title: 'Refresh summary',
+          detail: 'Server returned the refreshed data summary.',
+          value: [
+            `Reference: ${result.summary?.referenceDate ?? '-'}`,
+            `Expiry: ${result.summary?.expiry ?? '-'}`,
+            `Candles: ${result.summary?.rawCandles ?? '-'}`,
+            `Rows: ${result.summary?.rowsUpserted ?? '-'}`,
+          ].join(' | '),
+        },
+        ...(result.summary?.tempFile
+          ? [
+              {
+                title: 'Temp file',
+                detail: 'Raw candles were written to a temp JSON file.',
+                value: result.summary.tempFile,
+              },
+            ]
+          : []),
+      ]);
 
-  async function handleRequestTokenSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+      const pendingStart = performance.now();
+      setLatestDownloadStatus('running');
+      setLatestDownloadMessage('Latest data refreshed. Processing pending dates from Supabase...');
+      const pendingResponse = await fetch('/api/ema-intraday/pending-date-download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      const pendingDurationMs = performance.now() - pendingStart;
+      const pendingResult = (await pendingResponse.json()) as {
+        status?: string;
+        message?: string;
+        results?: Array<{ date?: string; status?: string; message?: string }>;
+      };
 
-    const requestToken = requestTokenInput.trim();
-    if (!requestToken || downloadStatus === 'generating_session') return;
+      if (!pendingResponse.ok || pendingResult.status !== 'success') {
+        if (pendingResponse.status === 400 && /no pending dates/i.test(pendingResult.message ?? '')) {
+          setLatestDownloadStatus('success');
+          setLatestDownloadMessage(
+            `${result.message ?? 'Latest data refreshed successfully.'} ${pendingResult.message ?? 'No pending dates found.'}`,
+          );
+          setLatestDownloadLog((current) => [
+            ...current,
+            {
+              title: 'Process pending dates',
+              detail: 'POST /api/ema-intraday/pending-date-download',
+              durationMs: pendingDurationMs,
+              value: pendingResult.message ?? 'No pending dates found.',
+            },
+          ]);
+          return;
+        }
 
-    await generateSessionAndDownload(requestToken);
-  }
+        const failedDates = (pendingResult.results ?? [])
+          .filter((item) => item.status !== 'success')
+          .map((item) => item.date)
+          .filter((value): value is string => Boolean(value));
+        throw new Error(
+          pendingResult.message ||
+            (failedDates.length > 0
+              ? `Pending date processing failed for ${failedDates.join(', ')}.`
+              : 'Pending date processing failed.'),
+        );
+      }
 
-  async function generateSessionAndDownload(requestToken: string) {
-    setDownloadStatus('generating_session');
-    setDownloadMessage('Generating Kite session...');
-    setAuthState({
-      ...kiteConnectService.setRequestToken(requestToken, 'Generating Kite access token.'),
-      status: 'connecting',
-    });
-
-    try {
-      const nextAuthState = await kiteConnectService.exchangeRequestToken(requestToken);
-      setRequestTokenInput('');
-      setAuthState(nextAuthState);
-      setPendingDownloadAfterAuth(false);
-      await downloadMissingHistoricalData();
-    } catch (error) {
-      setDownloadStatus('error');
-      setDownloadMessage(error instanceof Error ? error.message : 'Network error while connecting to Kite.');
-      setAuthState(
-        kiteConnectService.markError(
-          error instanceof Error ? error.message : 'Network error while connecting to Kite.',
-        ),
+      setLatestDownloadStatus('success');
+      setLatestDownloadMessage(
+        `${result.message ?? 'Latest data refreshed successfully.'} ${pendingResult.message ?? 'Pending dates processed successfully.'}`,
       );
+      setLatestDownloadLog((current) => [
+        ...current,
+        {
+          title: 'Process pending dates',
+          detail: 'POST /api/ema-intraday/pending-date-download',
+          durationMs: pendingDurationMs,
+          value: pendingResult.message ?? 'Pending dates processed successfully.',
+        },
+      ]);
+    } catch (error) {
+      setLatestDownloadStatus('error');
+      setLatestDownloadMessage(error instanceof Error ? error.message : 'Latest data refresh failed.');
+      setLatestDownloadLog((current) => [
+        ...current,
+        {
+          title: 'Failed step',
+          detail: error instanceof Error ? error.message : 'Latest data refresh failed.',
+          value: 'The refresh stopped before completion.',
+        },
+      ]);
     }
-  }
-
-  function handleUpdateOptionsData() {
-    setUpdateOptionsMessage('Feature Incoming Soon!!');
   }
 
   return (
@@ -227,7 +268,7 @@ export function HistoricalDataPage() {
               <CashIcon />
             </div>
             <div className="historical-data-card-title">
-              <h3>Cash Data</h3>
+              <h3>Latest Data</h3>
             </div>
           </div>
 
@@ -236,22 +277,79 @@ export function HistoricalDataPage() {
           <button
             className="historical-data-card-button"
             type="button"
-            onClick={() => void handleDownloadData()}
-            disabled={isBusy}
+            onClick={() => void handleLatestDownload()}
+            disabled={latestDownloadStatus === 'running' || latestDownloadStatus === 'starting'}
           >
-            <span>Download Cash Data</span>
+            <span>{latestDownloadStatus === 'running' || latestDownloadStatus === 'starting' ? 'Refreshing...' : 'Download Latest Data'}</span>
           </button>
 
-          <div className="historical-data-card-divider muted" />
+          <div className={`historical-data-refresh-panel historical-data-refresh-panel--${latestDownloadStatus}`}>
+            <div className="historical-data-refresh-panel-header">
+              <span className="historical-data-refresh-panel-label">Refresh status</span>
+              <strong>{latestDownloadHeadline}</strong>
+            </div>
 
-          <div className="historical-data-card-footer">
-            <div className="historical-data-card-footer-icon">
-              <ClockIcon />
+            <div className="historical-data-refresh-progress" aria-hidden="true">
+              <div style={{ width: `${latestDownloadProgress}%` }} />
             </div>
-            <div className="historical-data-card-footer-copy">
-              <span>Last Synced</span>
-              <strong>{cashDataSynced}</strong>
+
+            <div className="historical-data-refresh-steps" aria-label="Refresh stages">
+              {REFRESH_STEPS.map((step, index) => {
+                const stepState = getStepState(index);
+                return (
+                  <div key={step.key} className={`historical-data-refresh-step historical-data-refresh-step--${stepState}`}>
+                    <span className="historical-data-refresh-step-dot" />
+                    <div className="historical-data-refresh-step-copy">
+                      <strong>{step.label}</strong>
+                      <span>{step.detail}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
+            {latestDownloadSummary ? (
+              <div className="historical-data-refresh-summary">
+                <div className="historical-data-chip">
+                  <span className="historical-data-chip-label">Reference</span>
+                  <span className="historical-data-chip-value">{latestDownloadSummary.referenceDate ?? '-'}</span>
+                </div>
+                <div className="historical-data-chip">
+                  <span className="historical-data-chip-label">Expiry</span>
+                  <span className="historical-data-chip-value">{latestDownloadSummary.expiry ?? '-'}</span>
+                </div>
+                <div className="historical-data-chip">
+                  <span className="historical-data-chip-label">Candles</span>
+                  <span className="historical-data-chip-value">{latestDownloadSummary.rawCandles ?? '-'}</span>
+                </div>
+                <div className="historical-data-chip">
+                  <span className="historical-data-chip-label">Rows</span>
+                  <span className="historical-data-chip-value">{latestDownloadSummary.rowsUpserted ?? '-'}</span>
+                </div>
+              </div>
+            ) : null}
+
+            {latestDownloadLog.length > 0 ? (
+              <div className="historical-data-refresh-log" aria-label="Latest refresh run log">
+                <div className="historical-data-refresh-log-header">
+                  <strong>Run log</strong>
+                  <span>Line by line summary of the last refresh.</span>
+                </div>
+
+                <div className="historical-data-refresh-log-list">
+                  {latestDownloadLog.map((entry, index) => (
+                    <div key={`${entry.title}-${index}`} className="historical-data-refresh-log-item">
+                      <div className="historical-data-refresh-log-item-title">
+                        <strong>{`${index + 1}. ${entry.title}`}</strong>
+                        <span>{formatDurationMs(entry.durationMs)}</span>
+                      </div>
+                      <div className="historical-data-refresh-log-item-detail">{entry.detail}</div>
+                      {entry.value ? <div className="historical-data-refresh-log-item-value">{entry.value}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -261,7 +359,11 @@ export function HistoricalDataPage() {
               <OptionsIcon />
             </div>
             <div className="historical-data-card-title">
-              <h3>Options Data</h3>
+              <h3>Historical Data</h3>
+              <div className="historical-data-card-header-meta">
+                <span>Download Data</span>
+                <strong>{cashDataSynced}</strong>
+              </div>
             </div>
           </div>
 
@@ -270,61 +372,12 @@ export function HistoricalDataPage() {
           <button
             className="historical-data-card-button"
             type="button"
-            onClick={handleUpdateOptionsData}
-            disabled={isBusy}
+            onClick={onOpenPendingDates}
           >
-            <span>Download Options Data</span>
+            <span>Download Historical Data</span>
           </button>
-
-          <div className="historical-data-card-divider muted" />
-
-          <div className="historical-data-card-footer">
-            <div className="historical-data-card-footer-icon historical-data-card-footer-icon--soon">
-              <ConstructionIcon />
-            </div>
-            <div className="historical-data-card-footer-copy">
-              <span>Last Synced</span>
-              <strong>Coming Soon</strong>
-            </div>
-          </div>
         </section>
       </div>
-
-      <div className="historical-action-row">
-        <div className="historical-data-chip">
-          <span className="historical-data-chip-label">Kite Session</span>
-          <span className="historical-data-chip-value">{authStatusLabel}</span>
-        </div>
-        <div className="historical-data-chip">
-          <span className="historical-data-chip-label">Available Up To</span>
-          <span className="historical-data-chip-value">{dataAvailableUpTo}</span>
-        </div>
-      </div>
-
-      {downloadStatus !== 'idle' || downloadMessage !== 'Ready to update Supabase NIFTY 50 3 Minute history.' ? (
-        <div className="alert">{downloadMessage}</div>
-      ) : null}
-      {updateOptionsMessage ? <div className="alert">{updateOptionsMessage}</div> : null}
-      {needsRequestToken ? (
-        <section className="historical-token-panel">
-          <h2>Paste Request Token</h2>
-          <form onSubmit={handleRequestTokenSubmit}>
-            <label htmlFor="kite-request-token">Request Token</label>
-            <input
-              id="kite-request-token"
-              type="text"
-              value={requestTokenInput}
-              onChange={(event) => setRequestTokenInput(event.target.value)}
-              placeholder="Paste request_token"
-              disabled={downloadStatus === 'generating_session'}
-              autoComplete="off"
-              autoFocus
-            />
-          </form>
-        </section>
-      ) : null}
-
     </section>
   );
 }
-

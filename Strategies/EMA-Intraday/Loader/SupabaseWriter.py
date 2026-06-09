@@ -92,11 +92,19 @@ class SupabaseWriter:
                 reverse=True,
             )
             row = rows[0]
+            resolved_config_name = str(row.get("config_name") or "")
+            from_date = date.fromisoformat(str(row.get("from_date") or ""))
+            to_date = date.fromisoformat(str(row.get("to_date") or ""))
+
+            if (config_name or resolved_config_name).strip().lower() == "default":
+                from_date = date(2021, 1, 1)
+                to_date = date.today()
+
             return UniverseConfig(
                 id=int(row.get("id")) if row.get("id") is not None else None,
-                config_name=str(row.get("config_name") or ""),
-                from_date=date.fromisoformat(str(row.get("from_date") or "")),
-                to_date=date.fromisoformat(str(row.get("to_date") or "")),
+                config_name=resolved_config_name,
+                from_date=from_date,
+                to_date=to_date,
                 min_dte=int(row.get("min_dte") or 0),
                 max_dte=int(row.get("max_dte") or 0),
                 premium_min=float(row.get("premium_min") or 0),

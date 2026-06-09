@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type CSSProperties, useState } from 'react';
 
 type TradeSide = 'CE' | 'PE';
 
@@ -30,6 +30,8 @@ type SummaryCard = {
   valueOnly?: boolean;
 };
 
+const DEFAULT_TRADE_QUANTITY = '130';
+
 const INITIAL_HEADER_CARDS: SummaryCard[] = [
   { label: 'Trade Date', value: '02-Jun-26' },
   { label: 'Expiry Date', value: '02-Jun-26' },
@@ -37,7 +39,7 @@ const INITIAL_HEADER_CARDS: SummaryCard[] = [
   { label: 'Track Strike', value: '23,300' },
   { label: 'EMA Status', value: 'Far EMA', tone: 'pill', pillLabel: 'Far EMA', valueOnly: true },
   { label: 'Gap Status', value: 'GAP DN - 132', tone: 'bad', pillLabel: 'GAP DN - 132', valueOnly: true },
-  { label: 'Quantity', value: '75', editable: true },
+  { label: 'Quantity', value: DEFAULT_TRADE_QUANTITY, editable: true },
   { label: 'Total P&L Amount', value: '--' },
 ];
 
@@ -104,6 +106,61 @@ function ChevronDownIcon() {
   );
 }
 
+function getTradeOptionStyle(option: TradeSide) {
+  if (option === 'CE') {
+    return { color: '#DC2626', fontWeight: 700 } as const;
+  }
+
+  return { color: '#16A34A', fontWeight: 700 } as const;
+}
+
+function TradeOptionValue({ option }: { option: TradeSide }) {
+  return <span style={getTradeOptionStyle(option)}>{option}</span>;
+}
+
+function parseCurrencyInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.replace(/[^0-9.-]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getPnlTone(value: string | number | null | undefined) {
+  const parsedValue =
+    typeof value === 'number'
+      ? Number.isFinite(value)
+        ? value
+        : null
+      : typeof value === 'string'
+        ? parseCurrencyInput(value)
+        : null;
+
+  if (parsedValue === null || parsedValue === 0) return 'neutral' as const;
+  return parsedValue > 0 ? ('positive' as const) : ('negative' as const);
+}
+
+function getPnlTextStyle(value: string | number | null | undefined): CSSProperties {
+  const tone = getPnlTone(value);
+  return tone === 'neutral'
+    ? { color: 'inherit', fontWeight: 400 }
+    : {
+        color: tone === 'positive' ? '#16A34A' : '#DC2626',
+        fontWeight: 700,
+      };
+}
+
+function formatIndianCurrency(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return '';
+
+  const formatted = new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(value));
+
+  return `${value < 0 ? '-' : ''}₹${formatted}`;
+}
+
 function SummaryCardView({
   card,
   quantity,
@@ -145,22 +202,40 @@ type TradeEntryPageProps = {
 };
 
 export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving = false, embedded = false }: TradeEntryPageProps) {
-  const [quantity, setQuantity] = useState('75');
+  const [quantity, setQuantity] = useState(DEFAULT_TRADE_QUANTITY);
   const [cards, setCards] = useState<TradeCardState[]>([
     createTradeCard(1, true),
     createTradeCard(2, false),
     createTradeCard(3, false),
   ]);
 
+  function recalculateRowPnl(row: TradeCellState, quantityValue: string) {
+    const qty = parseCurrencyInput(quantityValue);
+    const entryPrice = parseCurrencyInput(row.entryPrice);
+    const exitPrice = parseCurrencyInput(row.exitPrice);
+    if (qty === null || entryPrice === null || exitPrice === null) {
+      return { ...row, pnl: '' };
+    }
+
+    return {
+      ...row,
+      pnl: (qty * (entryPrice - exitPrice)).toFixed(2),
+    };
+  }
+
+  function recalculateCardPnls(card: TradeCardState, quantityValue: string) {
+    return {
+      ...card,
+      rows: card.rows.map((row) => recalculateRowPnl(row, quantityValue)),
+    };
+  }
+
   function getCardTotalPnl(card: TradeCardState) {
-    const values = card.rows
-      .map((row) => row.pnl.trim())
-      .filter((value) => value !== '')
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-    if (values.length === 0) return '--';
-    const total = values.reduce((sum, value) => sum + value, 0);
-    return total < 0 ? `-${Math.abs(total).toFixed(2)}` : total.toFixed(2);
+    const total = card.rows.reduce((sum, row) => {
+      const pnlValue = parseCurrencyInput(row.pnl);
+      return sum + (pnlValue ?? 0);
+    }, 0);
+    return formatIndianCurrency(total || 0);
   }
 
   function updateTradeCard(cardId: string, updater: (current: TradeCardState) => TradeCardState) {
@@ -168,10 +243,20 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
   }
 
   function updateTradeRow(cardId: string, rowIndex: number, field: keyof TradeCellState, value: string) {
-    updateTradeCard(cardId, (current) => ({
-      ...current,
-      rows: current.rows.map((row, index) => (index === rowIndex ? { ...row, [field]: value } : row)),
-    }));
+    updateTradeCard(cardId, (current) =>
+      recalculateCardPnls(
+        {
+          ...current,
+          rows: current.rows.map((row, index) => (index === rowIndex ? { ...row, [field]: value } : row)),
+        },
+        quantity,
+      ),
+    );
+  }
+
+  function handleQuantityChange(nextQuantity: string) {
+    setQuantity(nextQuantity);
+    setCards((currentCards) => currentCards.map((card) => recalculateCardPnls(card, nextQuantity)));
   }
 
   function toggleTrade(cardId: string) {
@@ -186,8 +271,34 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
     setCards((currentCards) => [...currentCards, createTradeCard(currentCards.length + 1, true)]);
   }
 
+  const netTotalPnl = cards.reduce((sum, card) => {
+    const cardTotal = card.rows.reduce((cardSum, row) => {
+      const pnlValue = parseCurrencyInput(row.pnl);
+      return cardSum + (pnlValue ?? 0);
+    }, 0);
+    return sum + cardTotal;
+  }, 0);
+
+  const headerCards = INITIAL_HEADER_CARDS.map((card) => {
+    if (card.label === 'Quantity') {
+      return { ...card, value: quantity, editable: true };
+    }
+
+    if (card.label === 'Total P&L Amount') {
+      return {
+        ...card,
+        value: formatIndianCurrency(netTotalPnl) || '₹0.00',
+        tone: netTotalPnl > 0 ? ('good' as const) : netTotalPnl < 0 ? ('bad' as const) : ('neutral' as const),
+      };
+    }
+
+    return card;
+  });
+
+  const ShellTag = embedded ? 'section' : 'main';
+
   return (
-    <main className={`trade-page-shell${embedded ? ' trade-page-shell--embedded' : ''}`}>
+    <ShellTag className={`trade-page-shell${embedded ? ' trade-page-shell--embedded' : ''}`}>
       <section className="trade-page">
         {embedded ? null : (
           <button className="trade-page-close" type="button" aria-label="Close page" onClick={onClose}>
@@ -197,8 +308,8 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
 
         <header className="trade-page-header">
           <div className="trade-summary-grid">
-            {INITIAL_HEADER_CARDS.map((card) => (
-              <SummaryCardView key={card.label} card={card} quantity={quantity} onQuantityChange={setQuantity} />
+            {headerCards.map((card) => (
+              <SummaryCardView key={card.label} card={card} quantity={quantity} onQuantityChange={handleQuantityChange} />
             ))}
           </div>
 
@@ -254,8 +365,8 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
                             <th rowSpan={2} className="trade-entry-option-head">
                               Option
                             </th>
-                            <th colSpan={4}>ENTRY</th>
-                            <th colSpan={4}>EXIT</th>
+                            <th colSpan={4}>Entry</th>
+                            <th colSpan={4}>Exit</th>
                           </tr>
                           <tr>
                             <th>Entry Time</th>
@@ -271,7 +382,9 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
                         <tbody>
                           {card.rows.map((row, rowIndex) => (
                             <tr key={`${card.id}-${row.option}`}>
-                              <td className="trade-option-cell">{row.option}</td>
+                              <td className="trade-option-cell">
+                                <TradeOptionValue option={row.option} />
+                              </td>
                               <td>
                                 <input
                                   className="trade-input"
@@ -347,8 +460,12 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
                                   className="trade-input trade-input--pnl"
                                   type="text"
                                   readOnly
-                                  value={row.pnl}
+                                  value={formatIndianCurrency(parseCurrencyInput(row.pnl))}
                                   aria-label={`${card.title} ${row.option} P and L`}
+                                  style={{
+                                    color: getPnlTextStyle(row.pnl).color,
+                                    fontWeight: getPnlTone(row.pnl) === 'neutral' ? 400 : 700,
+                                  }}
                                 />
                               </td>
                             </tr>
@@ -378,6 +495,6 @@ export function TradeEntryPage({ onClose, onBackToExpiry, onSaveAndExit, saving 
           </div>
         </footer>
       </section>
-    </main>
+    </ShellTag>
   );
 }

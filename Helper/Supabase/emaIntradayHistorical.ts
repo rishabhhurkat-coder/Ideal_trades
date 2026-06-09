@@ -37,6 +37,30 @@ export type TradeCalendarResponse = {
   message?: string;
 };
 
+export type EmaIntradayTimeRow = {
+  hour: number | string | null;
+  minute: number | string | null;
+  candle_time: string | null;
+};
+
+export type EmaIntradayTimeResponse = {
+  status: 'success' | 'error';
+  rows?: EmaIntradayTimeRow[];
+  message?: string;
+};
+
+export type UniverseLoadRow = {
+  trade_date: string;
+  expiry: string;
+  load_status: string | null;
+};
+
+export type UniverseLoadResponse = {
+  status: 'success' | 'error';
+  rows?: UniverseLoadRow[];
+  message?: string;
+};
+
 export type TradeCalendarPerformanceTrace = {
   query: string;
   columns: string;
@@ -270,6 +294,45 @@ export async function readTradeCalendar(client: IdealTradesClient): Promise<Trad
     status: 'success',
     dates,
     trace,
+  };
+}
+
+export async function readEmaIntradayTimeTable(client: IdealTradesClient): Promise<EmaIntradayTimeResponse> {
+  const timeClient = schemaClient(client, 'emaintraday');
+  const { data, error } = await timeClient
+    .from('time')
+    .select('hour,minute,candle_time')
+    .order('candle_time', { ascending: true });
+
+  if (error) {
+    return {
+      status: 'error',
+      message: error.message ?? 'Unable to load emaintraday.time from Supabase.',
+    };
+  }
+
+  return {
+    status: 'success',
+    rows: Array.isArray(data) ? (data as EmaIntradayTimeRow[]) : [],
+  };
+}
+
+export async function readUniverseLoadRows(client: IdealTradesClient): Promise<UniverseLoadResponse> {
+  const loadClient = schemaClient(client, 'emaintraday');
+  const { data, error } = await loadClient.from('universe_loads').select('trade_date,expiry,load_status').order('trade_date', { ascending: true }).order('expiry', { ascending: true });
+
+  if (error) {
+    return {
+      status: 'error',
+      message: error.message ?? 'Unable to load emaintraday.universe_loads from Supabase.',
+    };
+  }
+
+  return {
+    status: 'success',
+    rows: Array.isArray(data)
+      ? (data as UniverseLoadRow[])
+      : [],
   };
 }
 

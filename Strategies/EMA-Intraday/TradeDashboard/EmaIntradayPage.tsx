@@ -1,15 +1,16 @@
 ﻿import { useEffect, useState, type ReactNode } from 'react';
-import { HistoricalDataPage } from './HistoricalData/HistoricalDataPage';
+import { HistoricalDataPage } from '../HistoricalData/HistoricalDataPage';
+import { PendingGcsDownloadPage } from '../HistoricalData/PendingGcsDownloadPage';
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { MastersPage } from './Masters/MastersPage';
-import { EMAIntradayTradePage } from './TradeDashboard/EMAIntradayTradePage';
+import { MastersPage } from '../Masters/MastersPage';
+import { EMAIntradayTradePage } from './EMAIntradayTradePage';
 
 type EmaIntradayPageProps = {
   openHistoricalData?: boolean;
   sidebar?: ReactNode;
 };
 
-type ModalKind = 'historical' | 'masters' | null;
+type ModalKind = 'historical' | 'masters' | 'pending' | null;
 
 function DownloadIcon() {
   return (
@@ -31,12 +32,14 @@ function EmaModal({
   title,
   onClose,
   children,
+  size = 'default',
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  size?: 'default' | 'compact' | 'pending';
 }) {
-  const compact = title === 'Historical Data';
+  const compact = size === 'compact' || size === 'pending' || title === 'Historical Data';
   const [modalOffset, setModalOffset] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{
     pointerId: number;
@@ -99,7 +102,13 @@ function EmaModal({
   return (
     <div className="ema-modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className={compact ? 'ema-modal ema-modal--compact' : 'ema-modal'}
+        className={
+          size === 'pending'
+            ? 'ema-modal ema-modal--compact ema-modal--pending'
+            : compact
+              ? 'ema-modal ema-modal--compact'
+              : 'ema-modal'
+        }
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -125,6 +134,7 @@ function EmaModal({
 
 export function EmaIntradayPage({ openHistoricalData = false, sidebar }: EmaIntradayPageProps) {
   const [modalKind, setModalKind] = useState<ModalKind>(openHistoricalData ? 'historical' : null);
+  const [historicalRefreshToken, setHistoricalRefreshToken] = useState(0);
 
   useEffect(() => {
     if (openHistoricalData) setModalKind('historical');
@@ -135,11 +145,12 @@ export function EmaIntradayPage({ openHistoricalData = false, sidebar }: EmaIntr
       <section className="trade-dashboard-page-header">
         <div className="trade-dashboard-page-title">
           <h1>EMA Intraday</h1>
+          <p className="trade-dashboard-page-subtitle">NIFTY</p>
         </div>
         <div className="header-actions">
           <button className="button secondary ema-action-button" type="button" onClick={() => setModalKind('historical')}>
             <DownloadIcon />
-            <span>Historical Data</span>
+            <span>Download Data</span>
           </button>
           <button className="button secondary ema-action-button" type="button" onClick={() => setModalKind('masters')}>
             <SettingsIcon />
@@ -158,7 +169,18 @@ export function EmaIntradayPage({ openHistoricalData = false, sidebar }: EmaIntr
       {content}
       {modalKind === 'historical' ? (
         <EmaModal title="Historical Data" onClose={() => setModalKind(null)}>
-          <HistoricalDataPage />
+          <HistoricalDataPage refreshToken={historicalRefreshToken} onOpenPendingDates={() => setModalKind('pending')} />
+        </EmaModal>
+      ) : null}
+      {modalKind === 'pending' ? (
+        <EmaModal title="Pending GCS Dates" onClose={() => setModalKind(null)} size="pending">
+          <PendingGcsDownloadPage
+            onClose={() => setModalKind(null)}
+            onDownloadComplete={() => {
+              setHistoricalRefreshToken((current) => current + 1);
+              setModalKind('historical');
+            }}
+          />
         </EmaModal>
       ) : null}
       {modalKind === 'masters' ? (

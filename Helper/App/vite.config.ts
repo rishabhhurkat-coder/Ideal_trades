@@ -28,11 +28,18 @@ class NoopWebSocket {
   }
 }
 
+if (typeof globalThis.WebSocket === 'undefined') {
+  globalThis.WebSocket = NoopWebSocket as unknown as typeof WebSocket;
+}
+
 const appRoot = fileURLToPath(new URL('.', import.meta.url));
 const kiteSessionPath = fileURLToPath(new URL('./.kite-session.json', import.meta.url));
 const externalKiteTokenPath = 'G:\\My Drive\\H&L\\Individual Trades Codes - Copy\\Data Files\\token.json';
 const historicalSyncScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/sync_kite_candles_to_supabase.py', import.meta.url));
+const universeLoaderScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/Loader/UniverseLoader.py', import.meta.url));
+const directKitePendingLoaderScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/Loader/DirectKitePendingLoader.py', import.meta.url));
 const tradeLogPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/TradeDashboard/trade-log.md', import.meta.url));
+const dateSelectionFastRefreshScriptPath = fileURLToPath(new URL('../../Strategies/EMA-Intraday/HistoricalData/DateSelectionFastRefresh.py', import.meta.url));
 const historicalStartDate = '2021-01-01';
 const niftyInstrumentToken = 256265;
 const historicalInterval = '3minute';
@@ -104,6 +111,22 @@ type KiteHistoricalResponse = {
   };
   message?: string;
   error_type?: string;
+};
+
+type PendingDateDownloadRequest = {
+  dates?: string[];
+};
+
+type PendingDateRow = {
+  trade_date: string;
+  expiry: string | null;
+};
+
+type PendingDateDownloadResult = {
+  date: string;
+  status: 'success' | 'error';
+  summary?: Record<string, unknown> | null;
+  message?: string;
 };
 
 type ValidatedCandle = {
@@ -643,6 +666,27 @@ function runPythonJsonCommand(
   });
 }
 
+function parseLastJsonObject(stdout: string): Record<string, unknown> | null {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse();
+
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    } catch {
+      // Keep scanning earlier lines until the final JSON summary is found.
+    }
+  }
+
+  return null;
+}
+
 async function readHistoricalDatabaseSnapshot(supabaseClient: ReturnType<typeof createClient> | null): Promise<HistoricalDbSnapshot> {
   if (!supabaseClient) {
     return {
@@ -824,6 +868,142 @@ function kiteSessionPlugin(env: Record<string, string>): Plugin {
             storage: {
               logPath: tradeLogPath,
             },
+          });
+        }
+      });
+
+      server.middlewares.use('/api/ema-intraday/pending-date-download', async (request, response) => {
+        if (request.method !== 'POST') {
+          sendJson(response, 405, { status: 'error', message: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const rawBody = await readRequestBody(request);
+          const parsed = rawBody ? (JSON.parse(rawBody) as PendingDateDownloadRequest) : {};
+          const requestedDates = Array.isArray(parsed.dates)
+            ? Array.from(
+                new Set(
+                  parsed.dates
+                    .map((value) => String(value).trim())
+                    .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value)),
+                ),
+              ).sort((left, right) => left.localeCompare(right))
+            : [];
+
+          if (!supabaseClient) {
+            sendJson(response, 500, {
+              status: 'error',
+              message: 'Supabase client is not available.',
+            });
+            return;
+          }
+
+          const pendingSchema = supabaseClient.schema('emaintraday');
+
+          const pendingWithExpiry = await pendingSchema.from('pending_dates').select('trade_date, expiry').order('trade_date', {
+            ascending: true,
+          });
+
+          if (pendingWithExpiry.error) {
+            throw new Error(String(pendingWithExpiry.error.message ?? pendingWithExpiry.error));
+          }
+
+          let pendingRows: PendingDateRow[] = (pendingWithExpiry.data ?? [])
+            .map((row) => ({
+              trade_date: String(row.trade_date ?? '').trim(),
+              expiry: row.expiry ? String(row.expiry).trim() : null,
+            }))
+            .filter((row): row is PendingDateRow => Boolean(row.trade_date));
+
+          if (requestedDates.length > 0) {
+            pendingRows = pendingRows.filter((row) => requestedDates.includes(row.trade_date));
+          }
+
+          if (pendingRows.length === 0) {
+            sendJson(response, 400, {
+              status: 'error',
+              message: 'No pending dates were found to process.',
+            });
+            return;
+          }
+
+          const results: PendingDateDownloadResult[] = [];
+
+          for (const row of pendingRows) {
+            try {
+              if (!row.expiry) {
+                throw new Error(`Missing expiry for pending date ${row.trade_date}.`);
+              }
+
+              const { stdout, stderr } = await runPythonJsonCommand([
+                directKitePendingLoaderScriptPath,
+                '--trade-date',
+                row.trade_date,
+                '--expiry',
+                row.expiry,
+              ]);
+              const summary = parseLastJsonObject(stdout);
+              results.push({
+                date: row.trade_date,
+                status: summary?.status === 'success' ? 'success' : 'error',
+                summary,
+                message: summary?.message ? String(summary.message) : stderr.trim() || undefined,
+              });
+            } catch (error) {
+              results.push({
+                date: row.trade_date,
+                status: 'error',
+                message: error instanceof Error ? error.message : 'Download failed.',
+              });
+            }
+          }
+
+          const hasFailure = results.some((item) => item.status === 'error');
+
+          sendJson(response, hasFailure ? 207 : 200, {
+            status: hasFailure ? 'error' : 'success',
+            message: hasFailure
+              ? 'One or more pending dates failed to process.'
+              : 'Pending dates processed successfully.',
+            results,
+          });
+        } catch (error) {
+          sendJson(response, 500, {
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unable to process pending date download.',
+          });
+        }
+      });
+
+      server.middlewares.use('/api/ema-intraday/latest-date-refresh', async (request, response) => {
+        if (request.method !== 'POST') {
+          sendJson(response, 405, { status: 'error', message: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const { stdout, stderr } = await runPythonJsonCommand(['-3', dateSelectionFastRefreshScriptPath]);
+          const summary = parseLastJsonObject(stdout);
+
+          if (!summary || summary.status !== 'success') {
+            sendJson(response, 500, {
+              status: 'error',
+              message: summary?.message ? String(summary.message) : stderr.trim() || 'Latest data refresh failed.',
+              summary,
+            });
+            return;
+          }
+
+          sendJson(response, 200, {
+            status: 'success',
+            message: 'Latest data refreshed successfully.',
+            summary,
+          });
+        } catch (error) {
+          sendJson(response, 500, {
+            status: 'error',
+            message: error instanceof Error ? error.message : 'Unable to refresh latest data.',
           });
         }
       });

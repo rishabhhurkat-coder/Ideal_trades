@@ -1,6 +1,25 @@
-node_modules/
+# Environment
+.env
+*.env
+
+# Logs
+*.log
+logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Browser profiles
+.edge-cdp-profile/
+
+# Test output
+test-results/
+
+# Build
 dist/
-.env.local
-.kite-session.json
-*.tsbuildinfo
-vite-dev*.log
+node_modules/
+
+# OS
+Thumbs.db
+.DS_Store

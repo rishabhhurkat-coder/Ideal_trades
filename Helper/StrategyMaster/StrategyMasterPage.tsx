@@ -1,14 +1,60 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { EmaIntradayPage } from '../../Strategies/EMA-Intraday/EmaIntradayPage';
+import { EmaIntradayPage } from '../../Strategies/EMA-Intraday/TradeDashboard/EmaIntradayPage';
 import { StrategyForm } from './StrategyForm';
 import { StrategyTable } from './StrategyTable';
 import { useStrategies } from './useStrategies';
 import { formatStrategyType } from './strategy';
 import { TradeEntryPage } from '../App/src/TradeEntryPage';
 
-function getSidebarInitial(label: string) {
-  const trimmed = label.trim();
-  return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
+function ChevronLeftIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M14.5 6.5 9 12l5.5 5.5" />
+    </svg>
+  );
+}
+
+function SidebarAvatar({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: 'brand' | 'nav' | 'strategy';
+}) {
+  const initial = label.trim().charAt(0).toUpperCase() || '?';
+  return (
+    <span className={`master-avatar master-avatar--${tone}`} aria-hidden="true">
+      <span className="master-avatar-letter">{initial}</span>
+    </span>
+  );
+}
+
+function SidebarWaveIllustration() {
+  return (
+    <svg viewBox="0 0 260 112" aria-hidden="true" focusable="false" className="master-sidebar-wave">
+      <g opacity="0.28">
+        <path d="M0 80C24 72 42 58 66 58c26 0 38 16 64 16 24 0 36-11 58-11 21 0 39 8 72 0v49H0z" fill="#d4ede3" />
+        <path d="M0 70C27 63 48 48 74 48c27 0 40 18 66 18 22 0 33-8 56-8 23 0 41 10 64 4v41H0z" fill="#c0e2d3" opacity="0.7" />
+      </g>
+      <g opacity="0.22" fill="#1a5c42">
+        <rect x="24" y="61" width="8" height="24" rx="2" />
+        <rect x="38" y="53" width="8" height="32" rx="2" />
+        <rect x="52" y="67" width="8" height="18" rx="2" />
+        <rect x="190" y="57" width="8" height="28" rx="2" />
+        <rect x="204" y="46" width="8" height="39" rx="2" />
+        <rect x="218" y="63" width="8" height="22" rx="2" />
+      </g>
+      <polyline
+        points="18,74 42,68 60,72 82,58 104,63 124,50 146,54 168,43 192,48 214,40 238,45"
+        fill="none"
+        stroke="#1a5c42"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.26"
+      />
+    </svg>
+  );
 }
 
 function StrategySidebar({
@@ -32,59 +78,83 @@ function StrategySidebar({
   showTradeEntryActive?: boolean;
   strategies: Array<{ id: string; strategy_name: string }>;
 }) {
+  const getAvatarLabel = (name: string) => {
+    const trimmed = name.trim();
+    return trimmed ? trimmed.charAt(0).toUpperCase() : '?';
+  };
+
   return (
-    <aside className="master-sidebar">
-      <div className="master-sidebar-top">
-        <div className="master-brand">
-          <div className="master-brand-mark">I</div>
-          <div className="master-brand-copy">
-            <strong>Ideal Trades</strong>
+    <aside
+      className={`master-sidebar${collapsed ? ' master-sidebar--collapsed' : ' master-sidebar--expanded'}`}
+      aria-label="Strategy navigation rail"
+    >
+      <div className="master-sidebar-stack">
+        <header className="master-sidebar-header">
+          <div className="master-brand" title="Ideal Trades" aria-label="Ideal Trades">
+            <SidebarAvatar label="Ideal Trades" tone="brand" />
+            <div className="master-brand-copy">
+              <strong>Ideal Trades</strong>
+            </div>
           </div>
-        </div>
-        <button
-          className="master-sidebar-toggle"
-          type="button"
-          onClick={onToggleCollapsed}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <span aria-hidden="true">{collapsed ? '>' : '<'}</span>
-        </button>
-      </div>
-
-      <div className="master-nav-group master-nav-group--top">
-        <button className={`master-nav-item${showMastersActive ? ' active' : ''}`} type="button" onClick={onMasters} title="Strategy Master">
-          <span className="master-nav-icon" aria-hidden="true">
-            S
-          </span>
-          <span className="master-nav-label">Strategy Master</span>
-        </button>
-        <button className={`master-nav-item${showTradeEntryActive ? ' active' : ''}`} type="button" onClick={onTradeEntry} title="Trade Entry">
-          <span className="master-nav-icon" aria-hidden="true">
-            T
-          </span>
-          <span className="master-nav-label">Trade Entry</span>
-        </button>
-      </div>
-
-      <div className="master-sidebar-divider" />
-
-      <div className="master-nav-group">
-        <div className="master-nav-title">Strategies</div>
-        {strategies.map((item) => (
           <button
-            key={item.id}
+            className="master-sidebar-toggle"
             type="button"
-            className={`master-nav-pill${activeStrategyName === item.strategy_name ? ' active' : ''}`}
-            onClick={() => onStrategySelect(item.strategy_name)}
-            title={item.strategy_name}
+            onClick={onToggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <span className="master-nav-icon master-nav-icon--pill" aria-hidden="true">
-              {getSidebarInitial(item.strategy_name)}
-            </span>
-            <span className="master-nav-label">{item.strategy_name}</span>
+            <ChevronLeftIcon />
           </button>
-        ))}
+        </header>
+
+        <div className="master-nav-group master-nav-group--top">
+          <button
+            className={`master-nav-item${showMastersActive ? ' active' : ''}`}
+            type="button"
+            onClick={onMasters}
+            title="Strategy Master"
+            aria-label="Strategy Master"
+            data-tooltip="Strategy Master"
+          >
+            <SidebarAvatar label="Strategy Master" tone="nav" />
+            <span className="master-nav-label">Strategy Master</span>
+          </button>
+          <button
+            className={`master-nav-item${showTradeEntryActive ? ' active' : ''}`}
+            type="button"
+            onClick={onTradeEntry}
+            title="Trade Entry"
+            aria-label="Trade Entry"
+            data-tooltip="Trade Entry"
+          >
+            <SidebarAvatar label="Trade Entry" tone="nav" />
+            <span className="master-nav-label">Trade Entry</span>
+          </button>
+        </div>
+
+        <div className="master-sidebar-divider" aria-hidden="true" />
+
+        <div className="master-nav-group">
+          <div className="master-nav-title">Strategies</div>
+          {strategies.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`master-nav-pill${activeStrategyName === item.strategy_name ? ' active' : ''}`}
+              onClick={() => onStrategySelect(item.strategy_name)}
+              title={item.strategy_name}
+              aria-label={item.strategy_name}
+              data-tooltip={item.strategy_name}
+            >
+              <SidebarAvatar label={getAvatarLabel(item.strategy_name)} tone="strategy" />
+              <span className="master-nav-label">{item.strategy_name}</span>
+            </button>
+          ))}
+        </div>
+        <div className="master-sidebar-spacer" aria-hidden="true" />
+        <div className="master-sidebar-footer" aria-hidden="true">
+          <SidebarWaveIllustration />
+        </div>
       </div>
     </aside>
   );
@@ -101,7 +171,7 @@ export function StrategyMasterPage() {
   const [activePage, setActivePage] = useState<'strategy-master' | 'ema-intraday' | 'strategy-page' | 'trade-entry'>(getInitialActivePage());
   const isTradeEntryPage = activePage === 'trade-entry';
   const [selectedStrategy, setSelectedStrategy] = useState<string | null>(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isStrategyModalOpen, setIsStrategyModalOpen] = useState(false);
   const [strategyModalOffset, setStrategyModalOffset] = useState({ x: 0, y: 0 });
   const strategyModalDragRef = useRef<{
@@ -260,7 +330,21 @@ export function StrategyMasterPage() {
   }
 
   if (activePage === 'trade-entry') {
-    return <TradeEntryPage />;
+    return (
+      <main className={shellClassName}>
+        <StrategySidebar
+          activeStrategyName={selectedStrategy}
+          collapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+          showTradeEntryActive
+          strategies={sidebarStrategies}
+          onStrategySelect={handleStrategySelect}
+          onTradeEntry={openTradeEntry}
+          onMasters={openStrategyMaster}
+        />
+        <TradeEntryPage embedded />
+      </main>
+    );
   }
 
   if (activePage === 'strategy-page') {
@@ -272,15 +356,15 @@ export function StrategyMasterPage() {
 
     return (
       <main className={shellClassName}>
-      <StrategySidebar
-        activeStrategyName={selectedStrategy}
-        collapsed={isSidebarCollapsed}
-        onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
-        strategies={sidebarStrategies}
-        onStrategySelect={handleStrategySelect}
-        onTradeEntry={openTradeEntry}
-        onMasters={openStrategyMaster}
-      />
+        <StrategySidebar
+          activeStrategyName={selectedStrategy}
+          collapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+          strategies={sidebarStrategies}
+          onStrategySelect={handleStrategySelect}
+          onTradeEntry={openTradeEntry}
+          onMasters={openStrategyMaster}
+        />
 
         <section className="master-content">
           <section className="master-page-header">

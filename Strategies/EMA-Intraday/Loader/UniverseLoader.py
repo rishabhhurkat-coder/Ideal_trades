@@ -379,6 +379,9 @@ def run_loader(
     logger: logging.Logger,
     universe_config_name: str | None = None,
     dry_run: bool = False,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    expiry: date | None = None,
 ) -> LoadSummary:
     writer = SupabaseWriter(
         supabase_config,
@@ -388,6 +391,12 @@ def run_loader(
     )
 
     universe_config = writer.fetch_universe_config(universe_config_name)
+    if from_date is not None or to_date is not None:
+        universe_config = replace(
+            universe_config,
+            from_date=from_date or universe_config.from_date,
+            to_date=to_date or universe_config.to_date,
+        )
     _log(
         logger,
         "info",
@@ -403,6 +412,10 @@ def run_loader(
     )
 
     calendar_rows = writer.fetch_date_selection_rows(universe_config.from_date, universe_config.to_date)
+    if expiry is not None:
+        calendar_rows = [row for row in calendar_rows if str(row.get("expiry_date") or "") == expiry.isoformat()]
+        if not calendar_rows:
+            raise RuntimeError(f"No date_selection rows matched expiry={expiry.isoformat()}.")
 
     storage_client = build_storage_client(gcs_config)
     source_files, _expiry_checks = _check_nifty_expiry_files(
@@ -764,6 +777,9 @@ def run_debug_dry_run(
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Load EMA Intraday option universes from GCS into Supabase.")
     parser.add_argument("--config-name", default="", help="Optional universe_config.config_name override.")
+    parser.add_argument("--from-date", default="", help="Optional override start date in YYYY-MM-DD format.")
+    parser.add_argument("--to-date", default="", help="Optional override end date in YYYY-MM-DD format.")
+    parser.add_argument("--expiry", default="", help="Optional override expiry date in YYYY-MM-DD format.")
     parser.add_argument("--dry-run", action="store_true", help="Read and build rows without writing to Supabase.")
     parser.add_argument("--debug-dry-run", action="store_true", help="Run the loader in stage-by-stage debug mode.")
     parser.add_argument("--debug-symbol", default="NIFTY", help="Debug file symbol filter.")
@@ -805,6 +821,9 @@ def main(argv: list[str] | None = None) -> int:
             logger=logger,
             universe_config_name=args.config_name or None,
             dry_run=args.dry_run,
+            from_date=date.fromisoformat(args.from_date) if args.from_date else None,
+            to_date=date.fromisoformat(args.to_date) if args.to_date else None,
+            expiry=date.fromisoformat(args.expiry) if args.expiry else None,
         )
         print(
             json.dumps(

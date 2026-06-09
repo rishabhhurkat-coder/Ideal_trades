@@ -23,6 +23,19 @@ function createUnavailableSupabaseClient(): any {
         async insert() {
           return { data: null, error: unavailableError };
         },
+        async upsert() {
+          return { data: null, error: unavailableError };
+        },
+        async delete() {
+          return {
+            async eq() {
+              return { data: null, error: unavailableError };
+            },
+            async in() {
+              return { data: null, error: unavailableError };
+            },
+          };
+        },
         update() {
           return {
             async eq() {

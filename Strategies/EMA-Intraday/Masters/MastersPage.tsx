@@ -38,6 +38,17 @@ function matchesQuery(values: string[], query: string) {
   return values.some((value) => value.toLowerCase().includes(normalized));
 }
 
+type ReasonOptionLike = {
+  id: string;
+  name: string;
+};
+
+function withSelectedReasonOption<T extends ReasonOptionLike>(rows: T[], selectedValue: string | null | undefined) {
+  if (!selectedValue) return rows;
+  if (rows.some((row) => row.name === selectedValue)) return rows;
+  return [{ id: `selected-${selectedValue}`, name: selectedValue } as T, ...rows];
+}
+
 function StatusPill({ active }: { active: boolean }) {
   return <span className={active ? 'status-pill active' : 'status-pill inactive'}>{active ? 'Active' : 'Inactive'}</span>;
 }
@@ -159,6 +170,10 @@ function RuleEditor({
   entryReasons: EntryReason[];
   exitReasons: ExitReason[];
 }) {
+  const entryReasonOptions = withSelectedReasonOption(entryReasons, draft.entry_reason);
+  const exitReasonOptions = withSelectedReasonOption(exitReasons, draft.exit_reason);
+  const otherLegExitReasonOptions = withSelectedReasonOption(exitReasons, draft.other_leg_exit_reason);
+
   return (
     <div className="simple-editor">
       <div className="simple-editor-header">
@@ -184,7 +199,7 @@ function RuleEditor({
           <span>Exit Reason</span>
           <select value={draft.exit_reason} onChange={(event) => onChange({ ...draft, exit_reason: event.target.value })}>
             <option value="">Select</option>
-            {exitReasons.map((reason) => (
+            {exitReasonOptions.map((reason) => (
               <option key={reason.id} value={reason.name}>
                 {reason.name}
               </option>
@@ -210,7 +225,7 @@ function RuleEditor({
           <span>Entry Reason</span>
           <select value={draft.entry_reason ?? ''} onChange={(event) => onChange({ ...draft, entry_reason: event.target.value || null })}>
             <option value="">None</option>
-            {entryReasons.map((reason) => (
+            {entryReasonOptions.map((reason) => (
               <option key={reason.id} value={reason.name}>
                 {reason.name}
               </option>
@@ -218,10 +233,10 @@ function RuleEditor({
           </select>
         </label>
         <label>
-          <span>Other Leg Exit</span>
+          <span>Other Leg Exit Reason</span>
           <select value={draft.other_leg_exit_reason ?? ''} onChange={(event) => onChange({ ...draft, other_leg_exit_reason: event.target.value || null })}>
             <option value="">None</option>
-            {exitReasons.map((reason) => (
+            {otherLegExitReasonOptions.map((reason) => (
               <option key={reason.id} value={reason.name}>
                 {reason.name}
               </option>
@@ -651,7 +666,7 @@ export function MastersPage() {
                     <th>Exit Reason</th>
                     <th>Category</th>
                     <th>Entry Reason</th>
-                    <th>Other Exit</th>
+                    <th>Other Leg Exit Reason</th>
                     <th>New Leg</th>
                     <th>Status</th>
                     <th>Actions</th>

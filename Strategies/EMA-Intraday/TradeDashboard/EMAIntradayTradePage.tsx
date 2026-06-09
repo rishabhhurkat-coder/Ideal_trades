@@ -117,7 +117,6 @@ export type TradeRecordDraft = {
 };
 
 const DEFAULT_TRADE_QUANTITY = '1300';
-const EOD_EXIT_TIME = '15:27';
 const NORMAL_ENTRY_CUTOFF_MINUTES = 9 * 60 + 30;
 const TRADE_DATA_SCHEMA = 'emaintraday';
 const TRADE_DATA_TABLE = 'trade_data';
@@ -237,7 +236,7 @@ function normalizeDraftTrades(trades: TradeEntryDraft[]) {
       exit_reason: trade.exit_reason.trim(),
       entry_time: trade.entry_time,
       entry_price: trade.entry_price.trim(),
-      exit_time: trade.exit_reason.trim() === 'EOD' ? EOD_EXIT_TIME : trade.exit_time,
+      exit_time: trade.exit_time,
       exit_price: trade.exit_price.trim(),
     }))
     .filter(hasDraftTradeContent);
@@ -300,12 +299,7 @@ function normalizeLoadedTrade(item: any): TradeEntryRecord | null {
     exit_reason: typeof item.exit_reason === 'string' ? item.exit_reason : '',
     entry_time: typeof item.entry_time === 'string' ? item.entry_time : '',
     entry_price: entryPrice,
-    exit_time:
-      typeof item.exit_time === 'string' && item.exit_time
-        ? item.exit_time
-        : typeof item.exit_reason === 'string' && item.exit_reason === 'EOD'
-          ? EOD_EXIT_TIME
-        : '',
+    exit_time: typeof item.exit_time === 'string' ? item.exit_time : '',
     exit_price: exitPrice,
     pl_points: plPoints,
     pl_amount: plAmount,
@@ -1152,6 +1146,14 @@ function formatTimeDisplay(value: string) {
   const [hour, minute] = value.split(':');
   if (!hour || !minute) return value;
   return `${String(Number(hour))}.${minute.padStart(2, '0')}`;
+}
+
+function normalizeStoredTimeValue(value: string | null | undefined) {
+  if (!value) return '';
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return trimmed;
+  return `${match[1].padStart(2, '0')}:${match[2]}`;
 }
 
 function parseNumberOrNull(value: string) {
@@ -2154,8 +2156,6 @@ function getExitReasonOptions(rows: ExitReason[], selectedValue: string) {
 }
 
 function getTransitionExitTime(leg: TradeLegDraft, tradeIndex: number, exitReason: string) {
-  if (isEodExitReason(exitReason)) return EOD_EXIT_TIME;
-
   const selectedTrade = leg.trades[tradeIndex];
   const selectedExitTime = selectedTrade?.exit_time.trim() ?? '';
   if (selectedExitTime) return selectedExitTime;
@@ -2309,9 +2309,9 @@ function toDraftFromRecord(record: TradeRecord): TradeRecordDraft {
               quantity: trade.quantity?.toString() ?? DEFAULT_TRADE_QUANTITY,
               entry_reason: trade.entry_reason,
               exit_reason: trade.exit_reason,
-              entry_time: trade.entry_time,
+              entry_time: normalizeStoredTimeValue(trade.entry_time),
               entry_price: trade.entry_price?.toString() ?? '',
-              exit_time: trade.exit_time,
+              exit_time: normalizeStoredTimeValue(trade.exit_time),
               exit_price: trade.exit_price?.toString() ?? '',
             })),
           }))
@@ -2601,6 +2601,7 @@ function TradeModal({
           ...trade,
           [field]: normalized,
         }));
+        if (isEditingExistingTrade) return updatedDraft;
         return field === 'entry_time'
           ? applyAutoEntryReasonToDraft(updatedDraft, activeLegIndex, tradeIndex, normalized)
           : updatedDraft;
@@ -2623,6 +2624,7 @@ function TradeModal({
           ...trade,
           [field]: normalized,
         }));
+        if (isEditingExistingTrade) return updatedDraft;
         return field === 'entry_time'
           ? applyAutoEntryReasonToDraft(updatedDraft, activeLegIndex, tradeIndex, normalized)
           : updatedDraft;
@@ -2817,10 +2819,17 @@ function TradeModal({
 
   function updateExitReasonWithTransition(legIndex: number, tradeIndex: number, nextExitReason: string) {
     onUpdateDraft((current) => {
+      if (isEditingExistingTrade) {
+        return updateTradeInLeg(current, legIndex, tradeIndex, (trade) => ({
+          ...trade,
+          exit_reason: nextExitReason,
+        }));
+      }
+
       const updatedDraft = updateTradeInLeg(current, legIndex, tradeIndex, (trade) => ({
         ...trade,
         exit_reason: nextExitReason,
-        exit_time: isEodExitReason(nextExitReason) ? trade.exit_time.trim() || EOD_EXIT_TIME : trade.exit_time,
+        exit_time: trade.exit_time,
       }));
 
       const matchingRule = findMatchingTransitionRule(
@@ -2885,6 +2894,7 @@ function TradeModal({
         <div className="trade-modal-body">
           <TradeEntryPage
             embedded
+            isEditingExistingTrade={isEditingExistingTrade}
             onClose={onClose}
             onSaveAndExit={onSaveAndExit}
             saving={saving}
@@ -3184,6 +3194,7 @@ function TradeModal({
         {!isEntryStage ? (
       <TradeEntryPage
         embedded
+        isEditingExistingTrade={isEditingExistingTrade}
         onClose={onClose}
         onSaveAndExit={onSaveAndExit}
         saving={saving}
@@ -4845,6 +4856,7 @@ type TradeEntryPageProps = {
   onSaveAndExit?: () => void;
   saving?: boolean;
   embedded?: boolean;
+  isEditingExistingTrade?: boolean;
   entryReasons: EntryReason[];
   exitReasons: ExitReason[];
   transitionRules: TradeTransitionRule[];
@@ -4860,6 +4872,7 @@ function TradeEntryPage({
   onSaveAndExit,
   saving = false,
   embedded = false,
+  isEditingExistingTrade = false,
   entryReasons,
   exitReasons,
   transitionRules,
@@ -5051,7 +5064,7 @@ function TradeEntryPage({
       const updatedDraft = updateTradeInLeg(currentDraft, currentCardIndex, rowIndex, (trade) => ({
         ...trade,
         exit_reason: nextExitReason,
-        exit_time: isEodExitReason(nextExitReason) ? trade.exit_time.trim() || EOD_EXIT_TIME : trade.exit_time,
+        exit_time: trade.exit_time,
       }));
 
       const matchingRule = findMatchingTransitionRule(updatedDraft.legs[currentCardIndex]?.trades[rowIndex] ?? emptyTradeEntryDraft('CE'), transitionRules);
@@ -5085,6 +5098,7 @@ function TradeEntryPage({
   }, [draft.trade_date]);
 
   useEffect(() => {
+    if (isEditingExistingTrade) return;
     const tradeDate = draft.trade_date.trim();
     const expiry = draft.expiry.trim();
     if (!tradeDate || !expiry) return;
@@ -5134,7 +5148,7 @@ function TradeEntryPage({
     return () => {
       active = false;
     };
-  }, [cards, draft.expiry, draft.trade_date, optionSeriesStrikeRevision]);
+  }, [cards, draft.expiry, draft.trade_date, isEditingExistingTrade, optionSeriesStrikeRevision]);
 
   useEffect(() => {
     const tradeDate = draft.trade_date.trim();
