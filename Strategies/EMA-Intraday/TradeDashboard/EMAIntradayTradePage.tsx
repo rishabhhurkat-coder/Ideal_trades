@@ -116,7 +116,7 @@ export type TradeRecordDraft = {
   legs: TradeLegDraft[];
 };
 
-const DEFAULT_TRADE_QUANTITY = '130';
+const DEFAULT_TRADE_QUANTITY = '1300';
 const EOD_EXIT_TIME = '15:27';
 const NORMAL_ENTRY_CUTOFF_MINUTES = 9 * 60 + 30;
 const TRADE_DATA_SCHEMA = 'emaintraday';
@@ -393,12 +393,22 @@ function buildTradeDataRowsFromDraft(draft: TradeRecordDraft, lifecycleId: strin
 
   return normalizeDraftLegs(draft.legs).flatMap((leg) =>
     leg.trades.map((trade) => {
+      const hasEntryTime = Boolean(trade.entry_time.trim());
+      const hasExitTime = Boolean(trade.exit_time.trim());
+      const existingRow = existingRowsById.get(trade.id);
+
+      if (!hasEntryTime || !hasExitTime) {
+        if (existingRow) {
+          return existingRow;
+        }
+        return null;
+      }
+
       const entryPrice = trade.entry_price;
       const exitPrice = trade.exit_price;
       const quantity = trade.quantity;
       const points = computePoints(entryPrice, exitPrice);
       const amount = computePl(entryPrice, exitPrice, quantity ?? 1);
-      const existingRow = existingRowsById.get(trade.id);
       const isClosed = Boolean(trade.exit_reason.trim() || trade.exit_time.trim() || trade.exit_price !== null);
 
       return {
@@ -430,7 +440,7 @@ function buildTradeDataRowsFromDraft(draft: TradeRecordDraft, lifecycleId: strin
         created_at: existingRow?.created_at ?? now,
         updated_at: now,
       } satisfies TradeDataRow;
-    }),
+    }).filter((row): row is TradeDataRow => row !== null),
   );
 }
 
@@ -703,8 +713,6 @@ type TradeRow = {
 type DashboardPreset = 'all' | 'today' | 'week' | 'month' | 'profitable' | 'losing' | 'maxDd' | 'custom';
 
 type DashboardColumnKey =
-  | 'strategy'
-  | 'scrip'
   | 'tradeDate'
   | 'expiry'
   | 'trade'
@@ -718,17 +726,12 @@ type DashboardColumnKey =
   | 'exitDate'
   | 'exitTime'
   | 'exitPrice'
-  | 'tradeStatus'
   | 'quantity'
   | 'plPoints'
   | 'plAmount'
   | 'ddPoints'
   | 'ddAmount'
-  | 'charges'
-  | 'netPlAmount'
-  | 'margin'
-  | 'roi'
-  | 'remarks';
+  ;
 
 type DashboardRow = TradeRow & {
   qtyDisplay: number;
@@ -764,8 +767,6 @@ type TradeDashboardSettingsModalProps = {
 };
 
 const DASHBOARD_COLUMN_KEYS: DashboardColumnKey[] = [
-  'strategy',
-  'scrip',
   'tradeDate',
   'expiry',
   'trade',
@@ -779,22 +780,14 @@ const DASHBOARD_COLUMN_KEYS: DashboardColumnKey[] = [
   'exitDate',
   'exitTime',
   'exitPrice',
-  'tradeStatus',
   'quantity',
   'plPoints',
   'plAmount',
   'ddPoints',
   'ddAmount',
-  'charges',
-  'netPlAmount',
-  'margin',
-  'roi',
-  'remarks',
 ];
 
 const DASHBOARD_COLUMN_LABELS: Record<DashboardColumnKey, string> = {
-  strategy: 'Strategy',
-  scrip: 'Scrip',
   tradeDate: 'Trade Date',
   expiry: 'Expiry',
   trade: 'Trade',
@@ -808,17 +801,11 @@ const DASHBOARD_COLUMN_LABELS: Record<DashboardColumnKey, string> = {
   exitDate: 'Exit Date',
   exitTime: 'Exit Time',
   exitPrice: 'Exit Price',
-  tradeStatus: 'Trade Status',
   quantity: 'Quantity',
   plPoints: 'PL Points',
   plAmount: 'PL Amount',
   ddPoints: 'DD Points',
   ddAmount: 'DD Amount',
-  charges: 'Charges',
-  netPlAmount: 'Net PL Amount',
-  margin: 'Margin',
-  roi: 'ROI',
-  remarks: 'Remarks',
 };
 
 const DASHBOARD_TILE_KEYS: DashboardPreset[] = ['all', 'today', 'week', 'month', 'profitable', 'losing', 'maxDd', 'custom'];
@@ -830,6 +817,13 @@ const DEFAULT_TRADE_DASHBOARD_SETTINGS: TradeDashboardSettings = {
   emaProximity: [100],
   gapValues: [],
 };
+
+function createDefaultVisibleDashboardColumns() {
+  return DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
+    accumulator[key] = key !== 'trade' && key !== 'ddPoints' && key !== 'ddAmount';
+    return accumulator;
+  }, {} as Record<DashboardColumnKey, boolean>);
+}
 
 function createEmptyColumnFilters(): ColumnFilterMap {
   return DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
@@ -847,29 +841,61 @@ function formatSignedCurrency(value: number) {
   return `${sign}${formatCurrency(value)}`;
 }
 
+type PnlDisplayValue = number | string | null | undefined;
+
 type PnlTone = 'positive' | 'negative' | 'neutral';
 
-function getPnlTone(value: number | null | undefined): PnlTone {
-  if (value === null || value === undefined || value === 0) return 'neutral';
-  return value > 0 ? 'positive' : 'negative';
+function parsePnlDisplayValue(value: PnlDisplayValue): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.replace(/[^0-9.-]/g, '');
+  if (!normalized || normalized === '-' || normalized === '.' || normalized === '-.') return null;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getPnlColor(value: number | null | undefined) {
+function getPnlTone(value: PnlDisplayValue): PnlTone {
+  const parsedValue = parsePnlDisplayValue(value);
+  if (parsedValue === null || parsedValue === 0) return 'neutral';
+  return parsedValue > 0 ? 'positive' : 'negative';
+}
+
+function getPnlColor(value: PnlDisplayValue) {
   switch (getPnlTone(value)) {
     case 'positive':
-      return '#18833c';
+      return '#16A34A';
     case 'negative':
-      return '#d93e16';
+      return '#DC2626';
     default:
-      return '#5f6d69';
+      return 'inherit';
   }
 }
 
-function getPnlTextStyle(value: number | null | undefined, emphasis = false): CSSProperties {
+function getPnlCellStyle(value: PnlDisplayValue): CSSProperties {
+  const tone = getPnlTone(value);
+  return tone === 'neutral'
+    ? { color: 'inherit', fontWeight: 400 }
+    : {
+        color: tone === 'positive' ? '#16A34A' : '#DC2626',
+        fontWeight: 700,
+      };
+}
+
+function getPnlTextStyle(value: PnlDisplayValue, emphasis = false): CSSProperties {
   return {
     display: 'block',
     color: getPnlColor(value),
-    fontWeight: 900,
+    fontWeight: getPnlTone(value) === 'neutral' ? 400 : 700,
     fontSize: emphasis ? '16px' : '14px',
     lineHeight: 1.1,
     letterSpacing: '0.01em',
@@ -1103,8 +1129,8 @@ type TimeOption = {
   hour: string;
 };
 
-const TIME_OPTIONS: TimeOption[] = Array.from({ length: ((15 * 60 + 30) - (9 * 60 + 18)) / 3 + 1 }, (_, index) => {
-  const totalMinutes = 9 * 60 + 18 + index * 3;
+const TIME_OPTIONS: TimeOption[] = Array.from({ length: ((15 * 60 + 30) - (9 * 60 + 15)) / 3 + 1 }, (_, index) => {
+  const totalMinutes = 9 * 60 + 15 + index * 3;
   const hour = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
   const value = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -1122,10 +1148,10 @@ function formatPrice(value: number | null) {
 }
 
 function formatTimeDisplay(value: string) {
-  if (!value) return '-' ;
+  if (!value) return '-';
   const [hour, minute] = value.split(':');
   if (!hour || !minute) return value;
-  return `${String(Number(hour)).padStart(2, '0')}:${minute}`;
+  return `${String(Number(hour))}.${minute.padStart(2, '0')}`;
 }
 
 function parseNumberOrNull(value: string) {
@@ -2002,6 +2028,18 @@ function CloseIcon() {
   );
 }
 
+function getTradeOptionStyle(option: TradeOption) {
+  if (option === 'CE') {
+    return { color: '#DC2626', fontWeight: 700 } as const;
+  }
+
+  return { color: '#16A34A', fontWeight: 700 } as const;
+}
+
+function TradeOptionValue({ option }: { option: TradeOption }) {
+  return <span style={getTradeOptionStyle(option)}>{option}</span>;
+}
+
 type TradeDateCalendarDay = {
   dateKey: string;
   dayLabel: string;
@@ -2133,6 +2171,10 @@ function createTransitionTrade(option: TradeOption, entryReason: string | null, 
   };
 }
 
+function getTransitionEntryReason(rule: TradeTransitionRule) {
+  return rule.entry_reason?.trim() || rule.exit_reason.trim();
+}
+
 function getAutoEntryReasonForLeg(legNo: number, entryTime: string) {
   const entryMinutes = parseTimeToMinutes(entryTime);
   if (legNo <= 1) {
@@ -2202,9 +2244,27 @@ function applyTransitionRuleToDraft(
   }
 
   if (existingNextLegIndex >= 0) {
+    const entryReason = getTransitionEntryReason(rule);
     return {
       ...draft,
-      legs: updatedLegs,
+      legs: updatedLegs.map((leg, index) =>
+        index !== existingNextLegIndex
+          ? leg
+          : {
+              ...leg,
+              created_from_leg_no: currentLeg.leg_no,
+              trigger_exit_reason: rule.exit_reason,
+              trades: leg.trades.map((trade, tradeIndex) =>
+                tradeIndex === 0
+                  ? {
+                      ...trade,
+                      entry_reason: entryReason,
+                      entry_time: trade.entry_time || transitionTime,
+                    }
+                  : trade,
+              ),
+            },
+      ),
     };
   }
 
@@ -2216,7 +2276,7 @@ function applyTransitionRuleToDraft(
     leg_no: nextLegNo,
     created_from_leg_no: currentLeg.leg_no,
     trigger_exit_reason: rule.exit_reason,
-    trades: [createTransitionTrade(rule.new_leg_option, rule.entry_reason, transitionTime)],
+    trades: [createTransitionTrade(rule.new_leg_option, getTransitionEntryReason(rule), transitionTime)],
   };
 
   return {
@@ -2246,12 +2306,12 @@ function toDraftFromRecord(record: TradeRecord): TradeRecordDraft {
               id: trade.id,
               option: trade.option,
               trade_strike: trade.trade_strike?.toString() ?? '',
-              quantity: trade.quantity?.toString() ?? '75',
+              quantity: trade.quantity?.toString() ?? DEFAULT_TRADE_QUANTITY,
               entry_reason: trade.entry_reason,
               exit_reason: trade.exit_reason,
               entry_time: trade.entry_time,
               entry_price: trade.entry_price?.toString() ?? '',
-              exit_time: isEodExitReason(trade.exit_reason) && !trade.exit_time ? EOD_EXIT_TIME : trade.exit_time,
+              exit_time: trade.exit_time,
               exit_price: trade.exit_price?.toString() ?? '',
             })),
           }))
@@ -2320,14 +2380,10 @@ function buildDashboardRows(rows: TradeRow[]): DashboardRow[] {
 
 function getDashboardValue(row: DashboardRow, key: DashboardColumnKey) {
   switch (key) {
-    case 'strategy':
-      return TRADE_DATA_STRATEGY;
-    case 'scrip':
-      return TRADE_DATA_SCRIPT;
     case 'tradeDate':
-      return row.tradeDate;
+      return formatDateTile(row.tradeDate);
     case 'expiry':
-      return row.expiry || '-';
+      return formatDateTile(row.expiry || '');
     case 'trade':
       return 'SELL';
     case 'option':
@@ -2337,21 +2393,19 @@ function getDashboardValue(row: DashboardRow, key: DashboardColumnKey) {
     case 'entryReason':
       return row.entryReason || '-';
     case 'entryDate':
-      return row.tradeDate || '-';
+      return formatDateTile(row.tradeDate);
     case 'entryTime':
-      return row.entryTime || '-';
+      return formatTimeDisplay(row.entryTime);
     case 'entryPrice':
       return formatPrice(row.entryPrice);
     case 'exitReason':
       return row.exitReason || '-';
     case 'exitDate':
-      return row.tradeDate || '-';
+      return formatDateTile(row.tradeDate);
     case 'exitTime':
-      return row.exitTime || '-';
+      return formatTimeDisplay(row.exitTime);
     case 'exitPrice':
       return formatPrice(row.exitPrice);
-    case 'tradeStatus':
-      return row.trade.exit_reason || row.trade.exit_time || row.trade.exit_price !== null ? 'CLOSED' : 'OPEN';
     case 'quantity':
       return String(row.qtyDisplay);
     case 'plPoints':
@@ -2362,16 +2416,6 @@ function getDashboardValue(row: DashboardRow, key: DashboardColumnKey) {
       return formatDashboardNumber(row.ddPoints);
     case 'ddAmount':
       return formatDashboardNumber(row.ddAmount);
-    case 'charges':
-      return '-';
-    case 'netPlAmount':
-      return '-';
-    case 'margin':
-      return '-';
-    case 'roi':
-      return '-';
-    case 'remarks':
-      return '-';
     default:
       return '-';
   }
@@ -2477,6 +2521,7 @@ function removeLeg(draft: TradeRecordDraft, legIndex: number) {
 function TradeModal({
   draft,
   editingId,
+  isEditingExistingTrade,
   selectedTradeId,
   entryReasons,
   exitReasons,
@@ -2494,6 +2539,7 @@ function TradeModal({
 }: {
   draft: TradeRecordDraft;
   editingId: string | null;
+  isEditingExistingTrade: boolean;
   selectedTradeId: string | null;
   entryReasons: EntryReason[];
   exitReasons: ExitReason[];
@@ -2627,7 +2673,7 @@ function TradeModal({
   }, [draft.trade_date, open, tradeCalendarMonths]);
 
   useEffect(() => {
-    if (!open || tradeDates.length === 0 || draft.trade_date || !latestTradeDateOption) return;
+    if (isEditingExistingTrade || !open || tradeDates.length === 0 || draft.trade_date || !latestTradeDateOption) return;
 
     onUpdateDraft((current) => {
       if (current.trade_date) return current;
@@ -2643,7 +2689,7 @@ function TradeModal({
 
     setVisibleTradeMonthIndex(latestTradeMonthIndex);
     setCalendarView('dates');
-  }, [draft.trade_date, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, open, tradeDates.length]);
+  }, [draft.trade_date, isEditingExistingTrade, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, open, tradeDates.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -2696,7 +2742,7 @@ function TradeModal({
     };
 
   useEffect(() => {
-    if (!selectedTradeDateOption || selectedTradeDateOption.strike === null || !draft.trade_date) return;
+    if (isEditingExistingTrade || !selectedTradeDateOption || selectedTradeDateOption.strike === null || !draft.trade_date) return;
     if (draft.track_strike.trim()) return;
 
     onUpdateDraft((current) => {
@@ -2706,7 +2752,7 @@ function TradeModal({
         track_strike: String(selectedTradeDateOption.strike),
       };
     });
-  }, [draft.trade_date, draft.track_strike, onUpdateDraft, selectedTradeDateOption]);
+  }, [draft.trade_date, draft.track_strike, isEditingExistingTrade, onUpdateDraft, selectedTradeDateOption]);
 
   useLayoutEffect(() => {
     if (!open || loadingCalendar || tradeDates.length === 0) return;
@@ -2774,7 +2820,7 @@ function TradeModal({
       const updatedDraft = updateTradeInLeg(current, legIndex, tradeIndex, (trade) => ({
         ...trade,
         exit_reason: nextExitReason,
-        exit_time: isEodExitReason(nextExitReason) ? EOD_EXIT_TIME : trade.exit_time === EOD_EXIT_TIME ? '' : trade.exit_time,
+        exit_time: isEodExitReason(nextExitReason) ? trade.exit_time.trim() || EOD_EXIT_TIME : trade.exit_time,
       }));
 
       const matchingRule = findMatchingTransitionRule(
@@ -3452,7 +3498,7 @@ function TradeDetailModal({
           <div className="trade-detail-title">
             <span>Leg Summary</span>
             <strong>
-              {row.tradeDate} Â· Leg {row.legNo} Â· {row.option}
+              {row.tradeDate} Â· Leg {row.legNo} Â· <TradeOptionValue option={row.option} />
             </strong>
           </div>
           <button className="button secondary trade-modal-close trade-detail-close" type="button" onClick={onClose} aria-label="Close">
@@ -3486,7 +3532,9 @@ function TradeDetailModal({
             <div className="trade-detail-grid">
               <div className="trade-detail-field">
                 <span>Option</span>
-                <strong>{row.option}</strong>
+                <strong>
+                  <TradeOptionValue option={row.option} />
+                </strong>
               </div>
               <div className="trade-detail-field">
                 <span>Leg Strike</span>
@@ -3522,7 +3570,7 @@ function TradeDetailModal({
               </div>
               <div className="trade-detail-field">
                 <span>PL</span>
-                <strong className={row.pl !== null && row.pl >= 0 ? 'trade-positive' : 'trade-negative'}>{formatDashboardNumber(row.pl)}</strong>
+                <strong style={getPnlTextStyle(row.pl)}>{formatDashboardNumber(row.pl)}</strong>
               </div>
             </div>
           </section>
@@ -3567,7 +3615,7 @@ function TradeDetailModalLight({
           <div className="trade-detail-title">
             <span>Leg Summary</span>
             <strong>
-              {row.tradeDate} Â· Leg {row.legNo} Â· {row.option}
+              {row.tradeDate} Â· Leg {row.legNo} Â· <TradeOptionValue option={row.option} />
             </strong>
           </div>
           <button className="button secondary trade-modal-close trade-detail-close" type="button" onClick={onClose} aria-label="Close">
@@ -3608,7 +3656,9 @@ function TradeDetailModalLight({
             <div className="trade-detail-grid">
               <div className="trade-detail-field">
                 <span>Option</span>
-                <strong>{row.option}</strong>
+                <strong>
+                  <TradeOptionValue option={row.option} />
+                </strong>
               </div>
               <div className="trade-detail-field">
                 <span>Leg Strike</span>
@@ -3708,6 +3758,7 @@ export function EMAIntradayTradePage() {
   const [tradeDashboardSettings, setTradeDashboardSettings] = useState<TradeDashboardSettings>(
     () => cloneTradeDashboardSettings(DEFAULT_TRADE_DASHBOARD_SETTINGS),
   );
+  const isEditingExistingTrade = editingId !== null;
 
   useEffect(() => {
     let active = true;
@@ -3796,12 +3847,10 @@ export function EMAIntradayTradePage() {
   const [appliedColumnFilters, setAppliedColumnFilters] = useState<ColumnFilterMap>(() => createEmptyColumnFilters());
   const [draftColumnFilters, setDraftColumnFilters] = useState<ColumnFilterMap>(() => createEmptyColumnFilters());
   const [filterSearch, setFilterSearch] = useState('');
-  const [visibleColumns, setVisibleColumns] = useState<Record<DashboardColumnKey, boolean>>(() =>
-    DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
-      accumulator[key] = true;
-      return accumulator;
-    }, {} as Record<DashboardColumnKey, boolean>),
-  );
+  const [filterPopoverStyle, setFilterPopoverStyle] = useState<CSSProperties | null>(null);
+  const [visibleColumns, setVisibleColumns] = useState<Record<DashboardColumnKey, boolean>>(() => createDefaultVisibleDashboardColumns());
+  const filterButtonRefs = useRef<Partial<Record<DashboardColumnKey, HTMLButtonElement | null>>>({});
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
   const visibleDashboardColumns = DASHBOARD_COLUMN_KEYS.filter((key) => visibleColumns[key]);
   const visibleDashboardColumnCount = Math.max(visibleDashboardColumns.length, 1);
 
@@ -3888,17 +3937,89 @@ export function EMAIntradayTradePage() {
   const totalDays = new Set(visibleRows.map((row) => row.tradeDate)).size;
 
   useEffect(() => {
-    if (!openFilterColumn) {
+    const activeFilterColumn = openFilterColumn;
+    if (!activeFilterColumn) {
       setFilterSearch('');
+      setFilterPopoverStyle(null);
       return;
     }
 
     setFilterSearch('');
     setDraftColumnFilters((current) => ({
       ...current,
-      [openFilterColumn]: appliedColumnFilters[openFilterColumn].length > 0 ? [...appliedColumnFilters[openFilterColumn]] : allColumnValues[openFilterColumn],
+      [activeFilterColumn]:
+        appliedColumnFilters[activeFilterColumn].length > 0 ? [...appliedColumnFilters[activeFilterColumn]] : allColumnValues[activeFilterColumn],
     }));
   }, [allColumnValues, appliedColumnFilters, openFilterColumn]);
+
+  useLayoutEffect(() => {
+    const activeFilterColumn = openFilterColumn;
+    if (!activeFilterColumn) {
+      setFilterPopoverStyle(null);
+      return;
+    }
+    const column = activeFilterColumn;
+
+    function updateFilterPopoverPosition() {
+      const anchor = filterButtonRefs.current[column];
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const viewportMargin = 8;
+      const gap = 8;
+      const preferredWidth = 280;
+      const maxWidth = Math.max(240, Math.min(preferredWidth, window.innerWidth - viewportMargin * 2));
+      const width = Math.max(240, Math.min(Math.max(preferredWidth, rect.width), maxWidth));
+      const estimatedHeight = Math.min(450, 96 + allColumnValues[column].length * 32);
+      const availableBelow = window.innerHeight - rect.bottom - viewportMargin;
+      const canFitBelow = availableBelow >= Math.min(estimatedHeight, 240);
+      const top = canFitBelow
+        ? Math.min(rect.bottom + gap, window.innerHeight - viewportMargin - 120)
+        : Math.max(viewportMargin, rect.top - gap - estimatedHeight);
+      const left = Math.min(
+        Math.max(viewportMargin, rect.left),
+        Math.max(viewportMargin, window.innerWidth - width - viewportMargin),
+      );
+
+      setFilterPopoverStyle({
+        position: 'fixed',
+        top,
+        left,
+        width,
+        maxHeight: Math.min(450, window.innerHeight - viewportMargin * 2),
+        zIndex: 9999,
+      });
+    }
+
+    updateFilterPopoverPosition();
+
+    window.addEventListener('resize', updateFilterPopoverPosition);
+    window.addEventListener('scroll', updateFilterPopoverPosition, true);
+
+    return () => {
+      window.removeEventListener('resize', updateFilterPopoverPosition);
+      window.removeEventListener('scroll', updateFilterPopoverPosition, true);
+    };
+  }, [allColumnValues, openFilterColumn]);
+
+  useEffect(() => {
+    const activeFilterColumn = openFilterColumn;
+    if (!activeFilterColumn) return;
+    const column = activeFilterColumn;
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      const anchor = filterButtonRefs.current[column];
+      if (anchor?.contains(target) || filterPopoverRef.current?.contains(target)) {
+        return;
+      }
+
+      setOpenFilterColumn(null);
+    }
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [openFilterColumn]);
 
   function applyColumnFilter(column: DashboardColumnKey) {
     const selected = draftColumnFilters[column] ?? [];
@@ -3953,12 +4074,7 @@ export function EMAIntradayTradePage() {
   }
 
   function resetDashboardColumns() {
-    setVisibleColumns(
-      DASHBOARD_COLUMN_KEYS.reduce((accumulator, key) => {
-        accumulator[key] = true;
-        return accumulator;
-      }, {} as Record<DashboardColumnKey, boolean>),
-    );
+    setVisibleColumns(createDefaultVisibleDashboardColumns());
   }
 
   async function refreshRecords() {
@@ -3986,7 +4102,7 @@ export function EMAIntradayTradePage() {
   function beginEditTradeDay(record: TradeRecord, tradeId: string | null) {
     setEditingId(record.id);
     setSelectedTradeId(tradeId);
-    setFlowStage('exit');
+    setFlowStage('entry');
     setDraft(toDraftFromRecord(record));
     setOpen(true);
   }
@@ -3999,8 +4115,8 @@ export function EMAIntradayTradePage() {
     setDraft(emptyTradeDraft());
   }
 
-  function openTradeDetail(row: DashboardRow) {
-    setDetailRow(row);
+  function openTradeEditor(row: DashboardRow) {
+    beginEditTradeDay(row.record, null);
   }
 
   function closeTradeDetail() {
@@ -4090,26 +4206,15 @@ export function EMAIntradayTradePage() {
     const visibleValues = values.filter((value) => value.toLowerCase().includes(search));
     const allVisibleSelected = visibleValues.length > 0 && visibleValues.every((value) => selectedValues.includes(value));
     const someVisibleSelected = visibleValues.some((value) => selectedValues.includes(value));
-
-    return (
-      <th key={column} className={`trade-table-header trade-table-header--${column}`}>
-        <div className="trade-table-header-copy">
-          <span>{label}</span>
-          <button
-            className={`trade-table-filter-button${appliedColumnFilters[column].length > 0 ? ' active' : ''}`}
-            type="button"
-            aria-label={`Filter ${label}`}
-            onClick={() => {
-              setOpenFilterColumn((current) => (current === column ? null : column));
-              setFilterSearch('');
-            }}
+    const filterPopover = isOpen
+      ? createPortal(
+          <div
+            ref={filterPopoverRef}
+            className="trade-column-filter-popover"
+            role="dialog"
+            aria-label={`${label} filter`}
+            style={filterPopoverStyle ?? undefined}
           >
-            <FilterIcon />
-          </button>
-        </div>
-
-        {isOpen ? (
-          <div className="trade-column-filter-popover">
             <input
               className="trade-column-filter-search"
               type="text"
@@ -4155,66 +4260,77 @@ export function EMAIntradayTradePage() {
                 Apply
               </button>
             </div>
-          </div>
-        ) : null}
+          </div>,
+          document.body,
+        )
+      : null;
+
+    return (
+      <th key={column} className={`trade-table-header trade-table-header--${column}`}>
+        <div className="trade-table-header-copy">
+          <span>{label}</span>
+          <button
+            className={`trade-table-filter-button${appliedColumnFilters[column].length > 0 ? ' active' : ''}`}
+            type="button"
+            ref={(element) => {
+              filterButtonRefs.current[column] = element;
+            }}
+            aria-label={`Filter ${label}`}
+            onClick={() => {
+              setOpenFilterColumn((current) => (current === column ? null : column));
+              setFilterSearch('');
+            }}
+          >
+            <FilterIcon />
+          </button>
+        </div>
+        {filterPopover}
       </th>
     );
   }
 
   function renderDashboardCell(row: DashboardRow, column: DashboardColumnKey) {
     switch (column) {
-      case 'strategy':
-        return <td key={column}>{TRADE_DATA_STRATEGY}</td>;
-      case 'scrip':
-        return <td key={column}>{TRADE_DATA_SCRIPT}</td>;
       case 'tradeDate':
-        return <td key={column}>{row.tradeDate}</td>;
+        return <td key={column}>{formatDateTile(row.tradeDate)}</td>;
       case 'expiry':
-        return <td key={column}>{row.expiry}</td>;
+        return <td key={column}>{formatDateTile(row.expiry)}</td>;
       case 'trade':
         return <td key={column}>SELL</td>;
       case 'option':
-        return <td key={column}>{row.option}</td>;
+        return (
+          <td key={column}>
+            <TradeOptionValue option={row.option} />
+          </td>
+        );
       case 'strike':
         return <td key={column} className="trade-table-emphasis">{row.tradeStrike ?? '-'}</td>;
       case 'entryReason':
         return <td key={column}>{row.entryReason || '-'}</td>;
       case 'entryDate':
-        return <td key={column}>{row.tradeDate}</td>;
+        return <td key={column}>{formatDateTile(row.tradeDate)}</td>;
       case 'entryTime':
-        return <td key={column}>{row.entryTime || '-'}</td>;
+        return <td key={column}>{formatTimeDisplay(row.entryTime)}</td>;
       case 'entryPrice':
         return <td key={column}>{formatPrice(row.entryPrice)}</td>;
       case 'exitReason':
         return <td key={column}>{row.exitReason || '-'}</td>;
       case 'exitDate':
-        return <td key={column}>{row.tradeDate}</td>;
+        return <td key={column}>{formatDateTile(row.tradeDate)}</td>;
       case 'exitTime':
-        return <td key={column}>{row.exitTime || '-'}</td>;
+        return <td key={column}>{formatTimeDisplay(row.exitTime)}</td>;
       case 'exitPrice':
         return <td key={column}>{formatPrice(row.exitPrice)}</td>;
-      case 'tradeStatus':
-        return <td key={column}>{row.trade.exit_reason || row.trade.exit_time || row.trade.exit_price !== null ? 'CLOSED' : 'OPEN'}</td>;
       case 'quantity':
         return <td key={column}>{row.qtyDisplay}</td>;
       case 'plPoints':
-        return <td key={column} className={row.plPoints >= 0 ? 'trade-positive' : 'trade-negative'}>{formatDashboardNumber(row.plPoints)}</td>;
+        return <td key={column}><span style={getPnlCellStyle(row.plPoints)}>{formatDashboardNumber(row.plPoints)}</span></td>;
       case 'plAmount':
-        return <td key={column} className={row.plAmount >= 0 ? 'trade-positive' : 'trade-negative'}>{formatSignedCurrency(row.plAmount)}</td>;
+        return <td key={column}><span style={getPnlCellStyle(row.plAmount)}>{formatSignedCurrency(row.plAmount)}</span></td>;
       case 'ddPoints':
-        return <td key={column} className={row.ddPoints < 0 ? 'trade-dd' : ''}>{formatDashboardNumber(row.ddPoints)}</td>;
+        return <td key={column}><span style={getPnlCellStyle(row.ddPoints)}>{formatDashboardNumber(row.ddPoints)}</span></td>;
       case 'ddAmount':
-        return <td key={column} className="trade-negative">{formatSignedCurrency(row.ddAmount)}</td>;
-      case 'charges':
-        return <td key={column}>-</td>;
-      case 'netPlAmount':
-        return <td key={column}>-</td>;
-      case 'margin':
-        return <td key={column}>-</td>;
-      case 'roi':
-        return <td key={column}>-</td>;
-      case 'remarks':
-        return <td key={column}>-</td>;
+        return <td key={column}><span style={getPnlCellStyle(row.ddAmount)}>{formatSignedCurrency(row.ddAmount)}</span></td>;
       default:
         return null;
     }
@@ -4287,14 +4403,14 @@ export function EMAIntradayTradePage() {
                     className="trade-log-row"
                     role="button"
                     tabIndex={0}
-                    onClick={() => openTradeDetail(row)}
+                    onClick={() => openTradeEditor(row)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        openTradeDetail(row);
+                        openTradeEditor(row);
                       }
                     }}
-                    title="Open leg summary"
+                    title="Open trade editor"
                   >
                     {visibleDashboardColumns.map((column) => renderDashboardCell(row, column))}
                   </tr>
@@ -4935,7 +5051,7 @@ function TradeEntryPage({
       const updatedDraft = updateTradeInLeg(currentDraft, currentCardIndex, rowIndex, (trade) => ({
         ...trade,
         exit_reason: nextExitReason,
-        exit_time: isEodExitReason(nextExitReason) ? EOD_EXIT_TIME : trade.exit_time === EOD_EXIT_TIME ? '' : trade.exit_time,
+        exit_time: isEodExitReason(nextExitReason) ? trade.exit_time.trim() || EOD_EXIT_TIME : trade.exit_time,
       }));
 
       const matchingRule = findMatchingTransitionRule(updatedDraft.legs[currentCardIndex]?.trades[rowIndex] ?? emptyTradeEntryDraft('CE'), transitionRules);
@@ -5152,8 +5268,8 @@ function TradeEntryPage({
                             <th rowSpan={2} className="trade-entry-option-head">
                               Option
                             </th>
-                            <th colSpan={4}>ENTRY</th>
-                            <th colSpan={4}>EXIT</th>
+                            <th colSpan={4}>Entry</th>
+                            <th colSpan={4}>Exit</th>
                           </tr>
                           <tr>
                             <th>Entry Time</th>
@@ -5172,7 +5288,9 @@ function TradeEntryPage({
 
                             return (
                               <tr key={row.id}>
-                                <td className="trade-option-cell">{row.option}</td>
+                                <td className="trade-option-cell">
+                                  <TradeOptionValue option={row.option} />
+                                </td>
                                 <td>
                                   <TimeInputField
                                     inputClassName="trade-input"
@@ -5258,21 +5376,21 @@ function TradeEntryPage({
                                 </td>
                                 <td>
                                   <input
-                                    className="trade-input trade-input--pnl"
-                                    type="text"
-                                    readOnly
-                                    value={rowPnl === null ? '' : formatSignedCurrency(rowPnl)}
-                                    aria-label={`${card.title} ${row.option} P and L`}
-                                    style={{
-                                      paddingLeft: '14px',
-                                      paddingRight: '14px',
-                                      fontSize: '13.5px',
-                                      fontWeight: 900,
-                                      letterSpacing: '0.01em',
-                                      color: getPnlColor(rowPnl),
-                                    }}
-                                  />
-                                </td>
+                                  className="trade-input trade-input--pnl"
+                                  type="text"
+                                  readOnly
+                                  value={rowPnl === null ? '' : formatSignedCurrency(rowPnl)}
+                                  aria-label={`${card.title} ${row.option} P and L`}
+                                  style={{
+                                    paddingLeft: '14px',
+                                    paddingRight: '14px',
+                                    fontSize: '13.5px',
+                                    fontWeight: getPnlTone(rowPnl) === 'neutral' ? 400 : 700,
+                                    letterSpacing: '0.01em',
+                                    color: getPnlColor(rowPnl),
+                                  }}
+                                />
+                              </td>
                               </tr>
                             );
                           })}
