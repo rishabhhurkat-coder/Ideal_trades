@@ -123,7 +123,7 @@ const TRADE_DATA_TABLE = 'trade_data';
 const TRADE_DATA_STRATEGY = 'EMA Intraday';
 const TRADE_DATA_SCRIPT = 'NIFTY';
 const LEGACY_TRADE_DASHBOARD_STORAGE_KEY = 'ideal-trades.ema-intraday.trade-dashboard';
-const HIDDEN_REASON_NAMES = new Set(['CE SL Trigger', 'PE SL Trigger', 'Manual Entry']);
+const HIDDEN_REASON_NAMES = new Set(['Manual Entry']);
 let tradeCalendarRequestCount = 0;
 
 if (typeof window !== 'undefined') {
@@ -723,6 +723,7 @@ type DashboardColumnKey =
   | 'quantity'
   | 'plPoints'
   | 'plAmount'
+  | 'totalProfit'
   | 'ddPoints'
   | 'ddAmount'
   ;
@@ -732,6 +733,7 @@ type DashboardRow = TradeRow & {
   plPoints: number;
   ddPoints: number;
   plAmount: number;
+  totalProfit: number;
   ddAmount: number;
 };
 
@@ -741,9 +743,15 @@ type TradeDashboardSettings = {
   allowedDte: number[];
   emaProximity: number[];
   gapValues: number[];
+  calendarDefaultMonthMode: 'specific' | 'latest';
+  calendarDefaultMonthKey: string;
 };
 
 type TradeDashboardSettingsKey = keyof TradeDashboardSettings;
+type NumericTradeDashboardSettingsKey = Exclude<
+  TradeDashboardSettingsKey,
+  'calendarDefaultMonthMode' | 'calendarDefaultMonthKey'
+>;
 
 type SettingsOptionGroupProps = {
   label: string;
@@ -777,6 +785,7 @@ const DASHBOARD_COLUMN_KEYS: DashboardColumnKey[] = [
   'quantity',
   'plPoints',
   'plAmount',
+  'totalProfit',
   'ddPoints',
   'ddAmount',
 ];
@@ -798,6 +807,7 @@ const DASHBOARD_COLUMN_LABELS: Record<DashboardColumnKey, string> = {
   quantity: 'Quantity',
   plPoints: 'PL Points',
   plAmount: 'PL Amount',
+  totalProfit: 'Total Profit',
   ddPoints: 'DD Points',
   ddAmount: 'DD Amount',
 };
@@ -810,6 +820,8 @@ const DEFAULT_TRADE_DASHBOARD_SETTINGS: TradeDashboardSettings = {
   allowedDte: [0, 1],
   emaProximity: [100],
   gapValues: [],
+  calendarDefaultMonthMode: 'specific',
+  calendarDefaultMonthKey: '2025-01',
 };
 
 function createDefaultVisibleDashboardColumns() {
@@ -922,7 +934,16 @@ function cloneTradeDashboardSettings(settings: TradeDashboardSettings): TradeDas
     allowedDte: [...settings.allowedDte],
     emaProximity: [...settings.emaProximity],
     gapValues: [...settings.gapValues],
+    calendarDefaultMonthMode: settings.calendarDefaultMonthMode,
+    calendarDefaultMonthKey: settings.calendarDefaultMonthKey,
   };
+}
+
+function formatMonthKeyLabel(monthKey: string) {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return monthKey || 'Not set';
+  const parsedDate = new Date(`${monthKey}-01T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return monthKey;
+  return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(parsedDate);
 }
 
 function formatSelectedSettingValues(values: number[]) {
@@ -986,7 +1007,7 @@ function TradeDashboardSettingsModal({ open, settings, onClose, onSave }: TradeD
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
-  function toggleSettingValue(key: TradeDashboardSettingsKey, value: number) {
+  function toggleSettingValue(key: NumericTradeDashboardSettingsKey, value: number) {
     setDraft((current) => {
       const currentValues = current[key];
       const nextValues = currentValues.includes(value)
@@ -997,6 +1018,20 @@ function TradeDashboardSettingsModal({ open, settings, onClose, onSave }: TradeD
         [key]: nextValues,
       };
     });
+  }
+
+  function setCalendarDefaultMonthMode(mode: 'specific' | 'latest') {
+    setDraft((current) => ({
+      ...current,
+      calendarDefaultMonthMode: mode,
+    }));
+  }
+
+  function setCalendarDefaultMonthKey(monthKey: string) {
+    setDraft((current) => ({
+      ...current,
+      calendarDefaultMonthKey: monthKey || '2025-01',
+    }));
   }
 
   function handleSave() {
@@ -1027,6 +1062,49 @@ function TradeDashboardSettingsModal({ open, settings, onClose, onSave }: TradeD
         </div>
 
         <div className="trade-settings-modal-body">
+          <section className="trade-settings-section">
+            <div className="trade-settings-section-copy">
+              <h4>Calendar Default Open</h4>
+              <p>Choose what month the trade calendar opens on when you click Trade.</p>
+            </div>
+            <div className="trade-settings-option-grid" role="group" aria-label="Calendar default open type">
+              <button
+                className={`trade-settings-option${draft.calendarDefaultMonthMode === 'specific' ? ' active' : ''}`}
+                type="button"
+                aria-pressed={draft.calendarDefaultMonthMode === 'specific'}
+                onClick={() => setCalendarDefaultMonthMode('specific')}
+              >
+                Specific Period
+              </button>
+              <button
+                className={`trade-settings-option${draft.calendarDefaultMonthMode === 'latest' ? ' active' : ''}`}
+                type="button"
+                aria-pressed={draft.calendarDefaultMonthMode === 'latest'}
+                onClick={() => setCalendarDefaultMonthMode('latest')}
+              >
+                Latest Date
+              </button>
+            </div>
+            <div className="trade-settings-selection">
+              <span>Current selection</span>
+              <strong>
+                {draft.calendarDefaultMonthMode === 'specific'
+                  ? `Specific Period (${formatMonthKeyLabel(draft.calendarDefaultMonthKey)})`
+                  : 'Latest Date'}
+              </strong>
+            </div>
+            <div className="trade-settings-selection">
+              <span>Specific Period Month</span>
+              <input
+                className="trade-theme-control"
+                type="month"
+                value={draft.calendarDefaultMonthKey}
+                onChange={(event) => setCalendarDefaultMonthKey(event.target.value)}
+                disabled={draft.calendarDefaultMonthMode !== 'specific'}
+              />
+            </div>
+          </section>
+
           <SettingsOptionGroup
             label="Allowed DTE Values"
             description="Controls the selected allowed DTE state for future expiry filtering."
@@ -1054,6 +1132,14 @@ function TradeDashboardSettingsModal({ open, settings, onClose, onSave }: TradeD
 
         <div className="trade-settings-footer">
           <div className="trade-settings-summary">
+            <div>
+              <span>Calendar Default Open</span>
+              <strong>
+                {draft.calendarDefaultMonthMode === 'specific'
+                  ? `Specific Period (${formatMonthKeyLabel(draft.calendarDefaultMonthKey)})`
+                  : 'Latest Date'}
+              </strong>
+            </div>
             <div>
               <span>Allowed DTE Values</span>
               <strong>{formatSelectedSettingValues(draft.allowedDte)}</strong>
@@ -2366,6 +2452,11 @@ function sortTradeRowsForDashboard(rows: TradeRow[]) {
 }
 
 function buildDashboardRows(rows: TradeRow[]): DashboardRow[] {
+  const profitByRecord = new Map<string, number>();
+  for (const row of rows) {
+    profitByRecord.set(row.recordId, (profitByRecord.get(row.recordId) ?? 0) + (row.trade.pl_amount ?? 0));
+  }
+
   return sortTradeRowsForDashboard(rows).map((row) => {
     return {
       ...row,
@@ -2373,6 +2464,7 @@ function buildDashboardRows(rows: TradeRow[]): DashboardRow[] {
       plPoints: row.trade.pl_points ?? 0,
       ddPoints: 0,
       plAmount: row.trade.pl_amount ?? 0,
+      totalProfit: profitByRecord.get(row.recordId) ?? 0,
       ddAmount: 0,
     };
   });
@@ -2412,6 +2504,8 @@ function getDashboardValue(row: DashboardRow, key: DashboardColumnKey) {
       return formatDashboardNumber(row.plPoints);
     case 'plAmount':
       return formatDashboardNumber(row.plAmount);
+    case 'totalProfit':
+      return formatDashboardNumber(row.totalProfit);
     case 'ddPoints':
       return formatDashboardNumber(row.ddPoints);
     case 'ddAmount':
@@ -2531,6 +2625,8 @@ function TradeModal({
   flowStage,
   open,
   saving,
+  calendarDefaultMonthMode,
+  calendarDefaultMonthKey,
   onClose,
   onUpdateDraft,
   onSave,
@@ -2549,6 +2645,8 @@ function TradeModal({
   flowStage: 'expiry' | 'entry' | 'exit';
   open: boolean;
   saving: boolean;
+  calendarDefaultMonthMode: 'specific' | 'latest';
+  calendarDefaultMonthKey: string;
   onClose: () => void;
   onUpdateDraft: (updater: (current: TradeRecordDraft) => TradeRecordDraft) => void;
   onSave: () => void;
@@ -2557,6 +2655,7 @@ function TradeModal({
 }) {
   const [activeLegIndex, setActiveLegIndex] = useState(0);
   const [timeDrafts, setTimeDrafts] = useState<Record<string, string>>({});
+  const showTradeSetup = false;
   const tradeCalendarMonths = useMemo(() => {
     const startedAt = performance.now();
     const months = buildTradeDateCalendar(tradeDates);
@@ -2572,16 +2671,36 @@ function TradeModal({
   }, [open, tradeDates]);
   const [visibleTradeMonthIndex, setVisibleTradeMonthIndex] = useState(0);
   const [calendarView, setCalendarView] = useState<'dates' | 'months' | 'years'>('dates');
+
   const latestTradeDateOption = useMemo(() => {
     if (tradeDates.length === 0) return null;
-    return tradeDates.reduce((latest, current) => (current.date > latest.date ? current : latest));
+
+    return tradeDates.reduce((latest, current) =>
+      current.date > latest.date ? current : latest,
+    );
   }, [tradeDates]);
+
   const latestTradeMonthIndex = useMemo(() => {
     if (!latestTradeDateOption) return 0;
+
     const monthKey = latestTradeDateOption.date.slice(0, 7);
-    const foundIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === monthKey);
-    return foundIndex >= 0 ? foundIndex : Math.max(tradeCalendarMonths.length - 1, 0);
+
+    const foundIndex = tradeCalendarMonths.findIndex(
+      (month) => month.monthKey === monthKey,
+    );
+
+    return foundIndex >= 0
+      ? foundIndex
+      : Math.max(tradeCalendarMonths.length - 1, 0);
   }, [latestTradeDateOption, tradeCalendarMonths]);
+
+  const defaultTradeMonthIndex = useMemo(() => {
+    const foundIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === calendarDefaultMonthKey);
+    return foundIndex >= 0 ? foundIndex : 0;
+  }, [calendarDefaultMonthKey, tradeCalendarMonths]);
+
+  const initialTradeMonthIndex =
+    calendarDefaultMonthMode === 'latest' ? latestTradeMonthIndex : defaultTradeMonthIndex;
 
   function handleTimeDraftChange(
     tradeIndex: number,
@@ -2655,7 +2774,7 @@ function TradeModal({
   useEffect(() => {
     if (!open) {
       setActiveLegIndex(0);
-      setVisibleTradeMonthIndex(0);
+      setVisibleTradeMonthIndex(initialTradeMonthIndex);
       setCalendarView('dates');
     }
   }, [open]);
@@ -2668,14 +2787,19 @@ function TradeModal({
     }
 
     const selectedTradeDate = draft.trade_date ? parseCalendarDate(draft.trade_date) : null;
-    const selectedMonthKey = selectedTradeDate ? toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7) : tradeCalendarMonths[tradeCalendarMonths.length - 1]?.monthKey ?? '';
-    const selectedMonthIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === selectedMonthKey);
+    if (selectedTradeDate) {
+      const selectedMonthKey = toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7);
+      const selectedMonthIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === selectedMonthKey);
+      setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
+      return;
+    }
 
-    setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
-  }, [draft.trade_date, open, tradeCalendarMonths]);
+    setVisibleTradeMonthIndex(initialTradeMonthIndex);
+  }, [calendarDefaultMonthMode, defaultTradeMonthIndex, draft.trade_date, initialTradeMonthIndex, open, tradeCalendarMonths]);
 
   useEffect(() => {
     if (isEditingExistingTrade || !open || tradeDates.length === 0 || draft.trade_date || !latestTradeDateOption) return;
+    if (calendarDefaultMonthMode !== 'latest') return;
 
     onUpdateDraft((current) => {
       if (current.trade_date) return current;
@@ -2689,9 +2813,9 @@ function TradeModal({
       };
     });
 
-    setVisibleTradeMonthIndex(latestTradeMonthIndex);
+    setVisibleTradeMonthIndex(initialTradeMonthIndex);
     setCalendarView('dates');
-  }, [draft.trade_date, isEditingExistingTrade, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, open, tradeDates.length]);
+  }, [calendarDefaultMonthMode, draft.trade_date, isEditingExistingTrade, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, open, tradeDates.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -2892,37 +3016,7 @@ function TradeModal({
         </div>
 
         <div className="trade-modal-body">
-          <TradeEntryPage
-            embedded
-            isEditingExistingTrade={isEditingExistingTrade}
-            onClose={onClose}
-            onSaveAndExit={onSaveAndExit}
-            saving={saving}
-            entryReasons={entryReasons}
-            exitReasons={exitReasons}
-            transitionRules={transitionRules}
-            tradeDates={tradeDates}
-            loadingCalendar={loadingCalendar}
-            draft={draft}
-            onUpdateDraft={onUpdateDraft}
-            onOpenSettings={onOpenSettings}
-          />
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="trade-modal-backdrop" role="presentation" onClick={onClose}>
-      <div className="trade-modal" role="dialog" aria-modal="true" aria-label="Add leg" onClick={(event) => event.stopPropagation()}>
-        <div className="trade-modal-topbar">
-          <button className="button secondary trade-modal-close" type="button" onClick={onClose} aria-label="Close">
-            <CloseIcon />
-          </button>
-        </div>
-
-        <div className="trade-modal-body">
-          {flowStage === 'expiry' ? (
+          {showTradeSetup ? (
             <section className="trade-form-section trade-setup-section">
               <div className="trade-setup-heading" style={{ justifyContent: 'space-between', gap: '16px' }}>
                 <div className="trade-setup-brand">
@@ -3195,6 +3289,8 @@ function TradeModal({
       <TradeEntryPage
         embedded
         isEditingExistingTrade={isEditingExistingTrade}
+        calendarDefaultMonthMode={calendarDefaultMonthMode}
+        calendarDefaultMonthKey={calendarDefaultMonthKey}
         onClose={onClose}
         onSaveAndExit={onSaveAndExit}
         saving={saving}
@@ -3806,14 +3902,12 @@ export function EMAIntradayTradePage() {
   }, []);
 
   useEffect(() => {    if (!open) {
-      setTradeDates([]);
       setLoadingCalendar(false);
       return;
     }
 
     let active = true;
     setLoadingCalendar(true);
-    setTradeDates([]);
 
     void fetchTradeCalendar()
       .then((calendar) => {
@@ -4338,6 +4432,8 @@ export function EMAIntradayTradePage() {
         return <td key={column}><span style={getPnlCellStyle(row.plPoints)}>{formatDashboardNumber(row.plPoints)}</span></td>;
       case 'plAmount':
         return <td key={column}><span style={getPnlCellStyle(row.plAmount)}>{formatSignedCurrency(row.plAmount)}</span></td>;
+      case 'totalProfit':
+        return <td key={column}><span style={getPnlCellStyle(row.totalProfit)}>{formatSignedCurrency(row.totalProfit)}</span></td>;
       case 'ddPoints':
         return <td key={column}><span style={getPnlCellStyle(row.ddPoints)}>{formatDashboardNumber(row.ddPoints)}</span></td>;
       case 'ddAmount':
@@ -4449,15 +4545,18 @@ export function EMAIntradayTradePage() {
       <TradeModal
         draft={draft}
         editingId={editingId}
-        selectedTradeId={selectedTradeId}
-        entryReasons={entryReasons}
-        exitReasons={exitReasons}
-        tradeDates={tradeDates}
+      selectedTradeId={selectedTradeId}
+      entryReasons={entryReasons}
+      exitReasons={exitReasons}
+      tradeDates={tradeDates}
+      isEditingExistingTrade={isEditingExistingTrade}
       loadingCalendar={loadingCalendar}
       transitionRules={transitionRules}
       flowStage={flowStage}
         open={open}
         saving={saving}
+        calendarDefaultMonthMode={tradeDashboardSettings.calendarDefaultMonthMode}
+        calendarDefaultMonthKey={tradeDashboardSettings.calendarDefaultMonthKey}
         onClose={closeModal}
         onUpdateDraft={setDraft}
         onOpenSettings={openSettings}
@@ -4857,6 +4956,8 @@ type TradeEntryPageProps = {
   saving?: boolean;
   embedded?: boolean;
   isEditingExistingTrade?: boolean;
+  calendarDefaultMonthMode: 'specific' | 'latest';
+  calendarDefaultMonthKey: string;
   entryReasons: EntryReason[];
   exitReasons: ExitReason[];
   transitionRules: TradeTransitionRule[];
@@ -4881,6 +4982,8 @@ function TradeEntryPage({
   draft,
   onUpdateDraft,
   onOpenSettings,
+  calendarDefaultMonthMode,
+  calendarDefaultMonthKey,
 }: TradeEntryPageProps) {
   const [quantity, setQuantity] = useState(() => draft.legs[0]?.trades[0]?.quantity ?? getRememberedTradeQuantity());
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -5440,6 +5543,8 @@ function TradeEntryPage({
         draft={draft}
         onUpdateDraft={onUpdateDraft}
         onClose={() => setCalendarOpen(false)}
+        defaultMonthMode={calendarDefaultMonthMode}
+        defaultMonthKey={calendarDefaultMonthKey}
         onSaveDate={(nextDraft, selectedDateOption) => {
           onUpdateDraft((current) => ({
             ...current,

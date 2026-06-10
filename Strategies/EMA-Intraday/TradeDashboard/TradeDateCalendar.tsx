@@ -13,6 +13,8 @@ type TradeDateCalendarProps = {
   mode?: 'embedded' | 'modal';
   selectionMode?: 'instant' | 'deferred';
   disableDateSelection?: boolean;
+  defaultMonthMode?: 'specific' | 'latest';
+  defaultMonthKey?: string;
 };
 
 function getTradePerfTimeline() {
@@ -241,6 +243,8 @@ function CalendarBody({
   onOpenSettings,
   selectionMode = 'instant',
   disableDateSelection = false,
+  defaultMonthMode = 'specific',
+  defaultMonthKey = '2025-01',
 }: {
   loadingCalendar: boolean;
   tradeDates: TradeCalendarDateOption[];
@@ -249,6 +253,8 @@ function CalendarBody({
   onOpenSettings?: () => void;
   selectionMode?: 'instant' | 'deferred';
   disableDateSelection?: boolean;
+  defaultMonthMode?: 'specific' | 'latest';
+  defaultMonthKey?: string;
 }) {
   const tradeCalendarMonths = useMemo(() => buildTradeDateCalendar(tradeDates), [tradeDates]);
   const [visibleTradeMonthIndex, setVisibleTradeMonthIndex] = useState(0);
@@ -263,6 +269,10 @@ function CalendarBody({
     const foundIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === monthKey);
     return foundIndex >= 0 ? foundIndex : Math.max(tradeCalendarMonths.length - 1, 0);
   }, [latestTradeDateOption, tradeCalendarMonths]);
+  const defaultTradeMonthIndex = useMemo(() => {
+    const foundIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === defaultMonthKey);
+    return foundIndex >= 0 ? foundIndex : 0;
+  }, [defaultMonthKey, tradeCalendarMonths]);
   const visibleTradeMonth = tradeCalendarMonths[visibleTradeMonthIndex] ?? tradeCalendarMonths[0] ?? null;
   const canGoToPreviousTradeMonth = visibleTradeMonthIndex > 0;
   const canGoToNextTradeMonth = visibleTradeMonthIndex < tradeCalendarMonths.length - 1;
@@ -279,14 +289,21 @@ function CalendarBody({
     }
 
     const selectedTradeDate = draft.trade_date ? parseCalendarDate(draft.trade_date) : null;
-    const selectedMonthKey = selectedTradeDate ? toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7) : tradeCalendarMonths[tradeCalendarMonths.length - 1]?.monthKey ?? '';
-    const selectedMonthIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === selectedMonthKey);
+    if (selectedTradeDate) {
+      const selectedMonthKey = toCalendarDateKey(getMonthStart(selectedTradeDate)).slice(0, 7);
+      const selectedMonthIndex = tradeCalendarMonths.findIndex((month) => month.monthKey === selectedMonthKey);
+      setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
+      return;
+    }
 
-    setVisibleTradeMonthIndex(selectedMonthIndex >= 0 ? selectedMonthIndex : 0);
-  }, [draft.trade_date, tradeCalendarMonths]);
+    setVisibleTradeMonthIndex(
+      defaultMonthMode === 'latest' ? latestTradeMonthIndex : defaultTradeMonthIndex,
+    );
+  }, [defaultMonthMode, defaultTradeMonthIndex, draft.trade_date, latestTradeMonthIndex, tradeCalendarMonths]);
 
   useEffect(() => {
     if (tradeDates.length === 0 || draft.trade_date || !latestTradeDateOption) return;
+    if (defaultMonthMode !== 'latest') return;
 
     onUpdateDraft((current) => {
       if (current.trade_date) return current;
@@ -302,7 +319,7 @@ function CalendarBody({
 
     setVisibleTradeMonthIndex(latestTradeMonthIndex);
     setCalendarView('dates');
-  }, [draft.trade_date, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, tradeDates.length]);
+  }, [defaultMonthMode, draft.trade_date, latestTradeDateOption, latestTradeMonthIndex, onUpdateDraft, tradeDates.length]);
 
   useEffect(() => {
     if (!selectedTradeDateOption || selectedTradeDateOption.strike === null || !draft.trade_date) return;
@@ -633,6 +650,8 @@ export function TradeDateCalendar({
   mode = 'embedded',
   selectionMode = 'instant',
   disableDateSelection = false,
+  defaultMonthMode = 'specific',
+  defaultMonthKey = '2025-01',
 }: TradeDateCalendarProps) {
   const [previewDraft, setPreviewDraft] = useState<TradeRecordDraft>(draft);
 
@@ -655,6 +674,8 @@ export function TradeDateCalendar({
       onOpenSettings={onOpenSettings}
       selectionMode={selectionMode}
       disableDateSelection={disableDateSelection}
+      defaultMonthMode={defaultMonthMode}
+      defaultMonthKey={defaultMonthKey}
     />
   );
 
